@@ -1,0 +1,82 @@
+{
+  "$schema": "https://raw.githubusercontent.com/firebase/firebase-tools/master/schema/blueprint.schema.json",
+  "version": "1.0.0",
+  "entities": {
+    "User": {
+      "collection": "users",
+      "fields": {
+        "id": { "type": "string", "required": true },
+        "name": { "type": "string", "required": true },
+        "email": { "type": "string", "required": true },
+        "role": { "type": "string", "required": true },
+        "avatar": { "type": "string", "required": false },
+        "boutiqueName": { "type": "string", "required": false },
+        "boutiqueBio": { "type": "string", "required": false },
+        "phone": { "type": "string", "required": false },
+        "rating": { "type": "number", "required": false },
+        "totalSales": { "type": "number", "required": false },
+        "joinedDate": { "type": "string", "required": false },
+        "createdAt": { "type": "string", "required": false }
+      }
+    },
+    "Product": {
+      "collection": "products",
+      "fields": {
+        "id": { "type": "string", "required": true },
+        "title": { "type": "string", "required": true },
+        "brand": { "type": "string", "required": true },
+        "era": { "type": "string", "required": true },
+        "category": { "type": "string", "required": true },
+        "clothingType": { "type": "string", "required": true },
+        "size": { "type": "string", "required": true },
+        "color": { "type": "string", "required": true },
+        "condition": { "type": "string", "required": true },
+        "conditionNotes": { "type": "string", "required": true },
+        "hasWearsOrTears": { "type": "boolean", "required": true },
+        "wearDetails": { "type": "array", "items": { "type": "string" }, "required": true },
+        "price": { "type": "number", "required": true },
+        "originalRetailEstimate": { "type": "number", "required": false },
+        "stock": { "type": "number", "required": true },
+        "status": { "type": "string", "required": true },
+        "sellerId": { "type": "string", "required": true },
+        "sellerName": { "type": "string", "required": true },
+        "sellerBoutique": { "type": "string", "required": true },
+        "sellerAvatar": { "type": "string", "required": false },
+        "images": { "type": "array", "items": { "type": "string" }, "required": true },
+        "measurements": { "type": "object", "required": false },
+        "fabric": { "type": "string", "required": true },
+        "tags": { "type": "array", "items": { "type": "string" }, "required": true },
+        "createdAt": { "type": "string", "required": true },
+        "featured": { "type": "boolean", "required": false },
+        "viewsCount": { "type": "number", "required": false }
+      }
+    },
+    "Order": {
+      "collection": "orders",
+      "fields": {
+        "id": { "type": "string", "required": true },
+        "orderNumber": { "type": "string", "required": true },
+        "buyerId": { "type": "string", "required": true },
+        "buyerName": { "type": "string", "required": true },
+        "buyerEmail": { "type": "string", "required": true },
+        "shippingAddress": { "type": "object", "required": true },
+        "items": { "type": "array", "required": true },
+        "subtotal": { "type": "number", "required": true },
+        "shippingFee": { "type": "number", "required": true },
+        "discount": { "type": "number", "required": true },
+        "total": { "type": "number", "required": true },
+        "paymentMethod": { "type": "string", "required": true },
+        "paymentStatus": { "type": "string", "required": true },
+        "orderStatus": { "type": "string", "required": true },
+        "courier": { "type": "object", "required": true },
+        "createdAt": { "type": "string", "required": true },
+        "sellerIds": { "type": "array", "items": { "type": "string" }, "required": true }
+      }
+    }
+  },
+  "roles": {
+    "admin": { "description": "Administrator with full access" },
+    "seller": { "description": "Vintage boutique curator who can list and manage items" },
+    "buyer": { "description": "Shopper who can place orders and browse catalog" }
+  }
+}

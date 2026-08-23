@@ -1,0 +1,6 @@
+{
+  "name": "ThriftLoop - Curated Vintage Boutique",
+  "description": "Curated vintage clothing and apparel e-commerce platform with buyer/seller portals, dynamic condition tagging, boutique inventory management, and live courier tracking.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
