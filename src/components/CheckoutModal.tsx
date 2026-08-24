@@ -19,6 +19,99 @@ import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
 import { useBodyScrollLock } from '../lib/useBodyScrollLock';
 
+export interface CityPostalMapping {
+  name: string;
+  zip: string;
+}
+
+export const PH_LOCATION_DATA: Record<string, CityPostalMapping[]> = {
+  "Metro Manila (NCR)": [
+    { name: "Makati City", zip: "1200" },
+    { name: "Manila", zip: "1000" },
+    { name: "Quezon City", zip: "1100" },
+    { name: "Taguig City (BGC)", zip: "1630" },
+    { name: "Pasig City", zip: "1600" },
+    { name: "Mandaluyong City", zip: "1550" },
+    { name: "Parañaque City", zip: "1700" },
+    { name: "Pasay City", zip: "1300" },
+    { name: "Muntinlupa City", zip: "1770" },
+    { name: "Caloocan City", zip: "1400" },
+    { name: "Las Piñas City", zip: "1740" },
+    { name: "Marikina City", zip: "1800" },
+    { name: "Valenzuela City", zip: "1440" },
+    { name: "San Juan City", zip: "1500" },
+    { name: "Malabon City", zip: "1470" },
+    { name: "Navotas City", zip: "1485" },
+    { name: "Pateros", zip: "1620" }
+  ],
+  "Cavite": [
+    { name: "Bacoor City", zip: "4102" },
+    { name: "Imus City", zip: "4103" },
+    { name: "Dasmariñas City", zip: "4114" },
+    { name: "General Trias City", zip: "4107" },
+    { name: "Tagaytay City", zip: "4120" },
+    { name: "Silang", zip: "4118" },
+    { name: "Kawit", zip: "4104" }
+  ],
+  "Laguna": [
+    { name: "Santa Rosa City", zip: "4026" },
+    { name: "Calamba City", zip: "4027" },
+    { name: "Biñan City", zip: "4024" },
+    { name: "San Pedro City", zip: "4023" },
+    { name: "Los Baños", zip: "4030" },
+    { name: "Cabuyao City", zip: "4025" }
+  ],
+  "Rizal": [
+    { name: "Antipolo City", zip: "1870" },
+    { name: "Cainta", zip: "1900" },
+    { name: "Taytay", zip: "1920" },
+    { name: "Binangonan", zip: "1940" },
+    { name: "San Mateo", zip: "1850" }
+  ],
+  "Bulacan": [
+    { name: "Malolos City", zip: "3000" },
+    { name: "Meycauayan City", zip: "3020" },
+    { name: "San Jose del Monte City", zip: "3023" },
+    { name: "Marilao", zip: "3019" },
+    { name: "Bocaue", zip: "3018" }
+  ],
+  "Pampanga": [
+    { name: "Angeles City", zip: "2000" },
+    { name: "San Fernando City", zip: "2000" },
+    { name: "Mabalacat City", zip: "2010" },
+    { name: "Guagua", zip: "2003" }
+  ],
+  "Batangas": [
+    { name: "Batangas City", zip: "4200" },
+    { name: "Lipa City", zip: "4217" },
+    { name: "Tanauan City", zip: "4232" },
+    { name: "Nasugbu", zip: "4231" }
+  ],
+  "Cebu": [
+    { name: "Cebu City", zip: "6000" },
+    { name: "Mandaue City", zip: "6014" },
+    { name: "Lapu-Lapu City", zip: "6015" },
+    { name: "Talisay City", zip: "6045" }
+  ],
+  "Davao del Sur": [
+    { name: "Davao City", zip: "8000" },
+    { name: "Digos City", zip: "8002" }
+  ],
+  "Iloilo": [
+    { name: "Iloilo City", zip: "5000" },
+    { name: "Oton", zip: "5020" }
+  ],
+  "Benguet": [
+    { name: "Baguio City", zip: "2600" },
+    { name: "La Trinidad", zip: "2601" }
+  ],
+  "Pangasinan": [
+    { name: "Dagupan City", zip: "2400" },
+    { name: "San Carlos City", zip: "2420" },
+    { name: "Urdaneta City", zip: "2428" }
+  ]
+};
+
 export const CheckoutModal: React.FC = () => {
   const { 
     isCheckoutOpen, 
@@ -36,11 +129,32 @@ export const CheckoutModal: React.FC = () => {
   const { currentUser } = useAuth();
 
   const [fullName, setFullName] = useState(currentUser?.name || '');
-  const [phone, setPhone] = useState(currentUser?.phone || '');
+  const [phone, setPhone] = useState(() => {
+    if (currentUser?.phone) {
+      return currentUser.phone.replace(/[^0-9]/g, '').slice(0, 11);
+    }
+    return '';
+  });
   const [street, setStreet] = useState(currentUser?.address?.street || '');
-  const [city, setCity] = useState(currentUser?.address?.city || '');
-  const [province, setProvince] = useState(currentUser?.address?.province || 'Metro Manila');
-  const [zipCode, setZipCode] = useState(currentUser?.address?.zipCode || '');
+  
+  const [province, setProvince] = useState<string>(() => {
+    if (currentUser?.address?.province && PH_LOCATION_DATA[currentUser.address.province]) {
+      return currentUser.address.province;
+    }
+    return "";
+  });
+
+  const [city, setCity] = useState<string>(() => {
+    if (currentUser?.address?.city) return currentUser.address.city;
+    return "";
+  });
+
+  const [zipCode, setZipCode] = useState<string>(() => {
+    if (currentUser?.address?.zipCode) return currentUser.address.zipCode;
+    return "";
+  });
+
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'gcash' | 'maya'>('gcash');
 
   // Cancel Confirmation Popup State
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
@@ -52,13 +166,64 @@ export const CheckoutModal: React.FC = () => {
   React.useEffect(() => {
     if (currentUser) {
       if (currentUser.name) setFullName(currentUser.name);
-      if (currentUser.phone) setPhone(currentUser.phone);
+      if (currentUser.phone) {
+        setPhone(currentUser.phone.replace(/[^0-9]/g, '').slice(0, 11));
+      }
       if (currentUser.address?.street) setStreet(currentUser.address.street);
-      if (currentUser.address?.city) setCity(currentUser.address.city);
-      if (currentUser.address?.province) setProvince(currentUser.address.province);
-      if (currentUser.address?.zipCode) setZipCode(currentUser.address.zipCode);
+
+      const userProv = currentUser.address?.province;
+      if (userProv && PH_LOCATION_DATA[userProv]) {
+        setProvince(userProv);
+        const cities = PH_LOCATION_DATA[userProv];
+        const userCity = currentUser.address?.city;
+        const matchedCity = cities.find(c => c.name.toLowerCase() === userCity?.toLowerCase());
+        if (matchedCity) {
+          setCity(matchedCity.name);
+          setZipCode(matchedCity.zip);
+        } else if (cities.length > 0) {
+          setCity(cities[0].name);
+          setZipCode(cities[0].zip);
+        }
+      }
     }
   }, [currentUser]);
+
+  const handleProvinceChange = (newProvince: string) => {
+    setProvince(newProvince);
+    if (!newProvince) {
+      setCity('');
+      setZipCode('');
+      return;
+    }
+    const cities = PH_LOCATION_DATA[newProvince] || [];
+    if (cities.length > 0) {
+      setCity(cities[0].name);
+      setZipCode(cities[0].zip);
+    } else {
+      setCity('');
+      setZipCode('');
+    }
+  };
+
+  const handleCityChange = (newCity: string) => {
+    setCity(newCity);
+    if (!newCity) {
+      setZipCode('');
+      return;
+    }
+    const cities = PH_LOCATION_DATA[province] || [];
+    const matched = cities.find(c => c.name === newCity);
+    if (matched) {
+      setZipCode(matched.zip);
+    } else {
+      setZipCode('');
+    }
+  };
+
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const digitsOnly = e.target.value.replace(/[^0-9]/g, '').slice(0, 11);
+    setPhone(digitsOnly);
+  };
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -117,8 +282,18 @@ export const CheckoutModal: React.FC = () => {
     e.preventDefault();
     setErrorMessage('');
 
-    if (!fullName.trim() || !phone.trim() || !street.trim() || !city.trim()) {
-      setErrorMessage('Please fill in complete delivery details.');
+    if (!fullName.trim()) {
+      setErrorMessage('Please enter recipient full name.');
+      return;
+    }
+
+    if (!phone.trim() || phone.length < 11 || !phone.startsWith('09')) {
+      setErrorMessage('Please enter a valid 11-digit Philippine mobile number starting with 09 (e.g., 09171234567).');
+      return;
+    }
+
+    if (!street.trim() || !city.trim() || !province.trim()) {
+      setErrorMessage('Please fill in complete street and city delivery details.');
       return;
     }
 
@@ -137,7 +312,7 @@ export const CheckoutModal: React.FC = () => {
     try {
       const generatedOrderId = `ord_${Date.now()}`;
 
-      // Call PayRex API Integration Endpoint
+      // Call PayRex API Integration Endpoint with selected payment method
       const payrexRes = await fetch('/api/payrex/create-checkout-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -146,6 +321,7 @@ export const CheckoutModal: React.FC = () => {
           items: cart,
           shippingFee,
           total,
+          paymentMethod: selectedPaymentMethod,
           shippingAddress: {
             fullName,
             phone,
@@ -167,7 +343,7 @@ export const CheckoutModal: React.FC = () => {
         city,
         province,
         zipCode,
-        paymentMethod: 'gcash'
+        paymentMethod: selectedPaymentMethod
       });
 
       setIsProcessing(false);
@@ -183,6 +359,7 @@ export const CheckoutModal: React.FC = () => {
   };
 
   const totalUnitsToCancel = (Object.values(cancelQuantities) as number[]).reduce((a: number, b: number) => a + b, 0);
+  const currentCitiesList = PH_LOCATION_DATA[province] || [];
 
   return (
     <>
@@ -231,39 +408,55 @@ export const CheckoutModal: React.FC = () => {
                   </h3>
                   <div className="space-y-3 text-xs">
                     <div>
-                      <label className="block font-semibold text-stone-700 mb-1 font-sans">Recipient Full Name</label>
+                      <label className="block font-semibold text-stone-700 mb-1 font-sans">
+                        Recipient Full Name
+                      </label>
                       <input
                         type="text"
                         required
                         value={fullName}
                         onChange={(e) => setFullName(e.target.value)}
-                        placeholder="Maya Chen"
+                        placeholder="Recipient full name"
                         className="w-full px-3 py-2 bg-white border border-stone-300 rounded-lg text-stone-900 focus:ring-1 focus:ring-amber-800 focus:outline-none font-sans"
                       />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <div>
-                        <label className="block font-semibold text-stone-700 mb-1 font-sans">Mobile Contact</label>
+                        <label className="block font-semibold text-stone-700 mb-1 font-sans">
+                          Mobile Contact
+                        </label>
                         <input
                           type="text"
                           required
                           value={phone}
-                          onChange={(e) => setPhone(e.target.value)}
-                          placeholder="+63 917 000 0000"
-                          className="w-full px-3 py-2 bg-white border border-stone-300 rounded-lg text-stone-900 focus:ring-1 focus:ring-amber-800 focus:outline-none font-sans"
+                          onChange={handlePhoneChange}
+                          placeholder="09171234567"
+                          maxLength={11}
+                          className="w-full px-3 py-2 bg-white border border-stone-300 rounded-lg text-stone-900 focus:ring-1 focus:ring-amber-800 focus:outline-none font-sans tracking-wide"
                         />
+                        <span className="text-[10px] text-stone-500 font-sans mt-0.5 block">
+                          11-digit PH mobile (e.g. 09171234567)
+                        </span>
                       </div>
+
                       <div>
-                        <label className="block font-semibold text-stone-700 mb-1 font-sans">Postal Code</label>
-                        <input
-                          type="text"
+                        <label className="block font-semibold text-stone-700 mb-1 font-sans">
+                          Province / Region
+                        </label>
+                        <select
                           required
-                          value={zipCode}
-                          onChange={(e) => setZipCode(e.target.value)}
-                          placeholder="1227"
-                          className="w-full px-3 py-2 bg-white border border-stone-300 rounded-lg text-stone-900 focus:ring-1 focus:ring-amber-800 focus:outline-none font-sans"
-                        />
+                          value={province}
+                          onChange={(e) => handleProvinceChange(e.target.value)}
+                          className="w-full px-3 py-2 bg-white border border-stone-300 rounded-lg text-stone-900 focus:ring-1 focus:ring-amber-800 focus:outline-none font-sans cursor-pointer"
+                        >
+                          <option value="">-- Select Province / Region --</option>
+                          {Object.keys(PH_LOCATION_DATA).map(provName => (
+                            <option key={provName} value={provName}>
+                              {provName}
+                            </option>
+                          ))}
+                        </select>
                       </div>
                     </div>
 
@@ -274,70 +467,121 @@ export const CheckoutModal: React.FC = () => {
                         required
                         value={street}
                         onChange={(e) => setStreet(e.target.value)}
-                        placeholder="Unit 402, Salcedo Park Towers"
+                        placeholder="Unit 402, Salcedo Park Towers, HV Dela Costa St"
                         className="w-full px-3 py-2 bg-white border border-stone-300 rounded-lg text-stone-900 focus:ring-1 focus:ring-amber-800 focus:outline-none font-sans"
                       />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2">
+                    {/* City Dropdown and Postal Code (Auto-filled) */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <div>
-                        <label className="block font-semibold text-stone-700 mb-1 font-sans">City</label>
-                        <input
-                          type="text"
+                        <label className="block font-semibold text-stone-700 mb-1 font-sans">
+                          City
+                        </label>
+                        <select
                           required
+                          disabled={!province}
                           value={city}
-                          onChange={(e) => setCity(e.target.value)}
-                          placeholder="Makati City"
-                          className="w-full px-3 py-2 bg-white border border-stone-300 rounded-lg text-stone-900 focus:ring-1 focus:ring-amber-800 focus:outline-none font-sans"
-                        />
+                          onChange={(e) => handleCityChange(e.target.value)}
+                          className={`w-full px-3 py-2 border rounded-lg font-sans transition-colors ${
+                            !province
+                              ? 'bg-stone-100 border-stone-200 text-stone-400 cursor-not-allowed'
+                              : 'bg-white border-stone-300 text-stone-900 focus:ring-1 focus:ring-amber-800 cursor-pointer'
+                          }`}
+                        >
+                          {!province ? (
+                            <option value="">Select Province first</option>
+                          ) : (
+                            <>
+                              <option value="">-- Select City --</option>
+                              {currentCitiesList.map(c => (
+                                <option key={c.name} value={c.name}>
+                                  {c.name}
+                                </option>
+                              ))}
+                            </>
+                          )}
+                        </select>
                       </div>
+
                       <div>
-                        <label className="block font-semibold text-stone-700 mb-1 font-sans">Province / Region</label>
+                        <label className="block font-semibold text-stone-700 mb-1 font-sans">
+                          Postal Code
+                        </label>
                         <input
                           type="text"
                           required
-                          value={province}
-                          onChange={(e) => setProvince(e.target.value)}
-                          placeholder="Metro Manila"
+                          value={zipCode}
+                          onChange={(e) => setZipCode(e.target.value)}
+                          placeholder="Postal Code"
                           className="w-full px-3 py-2 bg-white border border-stone-300 rounded-lg text-stone-900 focus:ring-1 focus:ring-amber-800 focus:outline-none font-sans"
                         />
                       </div>
                     </div>
+
                   </div>
                 </div>
 
-                {/* Integration 2: Payment Gateway Selector (PayRex API) */}
-                <div className="space-y-2 font-sans">
+                {/* Choose Payment Method */}
+                <div className="space-y-3 font-sans pt-2 border-t border-stone-200">
                   <div className="flex items-center justify-between">
-                    <h3 className="font-sans text-xs font-bold text-stone-900 flex items-center gap-1.5 uppercase tracking-wider">
-                      <Zap className="w-3.5 h-3.5 text-amber-600" /> System Integration 2: Payment Gateway
+                    <h3 className="font-sans text-sm font-bold text-stone-900 flex items-center gap-2">
+                      <CreditCard className="w-4 h-4 text-amber-800" /> Choose Payment Method
                     </h3>
-                    <span className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                      PayRex REST API Active
-                    </span>
                   </div>
 
-                  <div className="p-4 bg-stone-900 text-white rounded-2xl border-2 border-stone-800 shadow-lg space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-amber-700 text-stone-950 flex items-center justify-center font-bold text-base shadow-xs shrink-0">
-                          <CreditCard className="w-5 h-5 text-stone-950" />
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* GCash Option */}
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPaymentMethod('gcash')}
+                      className={`p-3.5 rounded-2xl border-2 transition-all flex flex-col justify-between text-left cursor-pointer ${
+                        selectedPaymentMethod === 'gcash'
+                          ? 'border-blue-600 bg-blue-50/70 shadow-sm'
+                          : 'border-stone-200 bg-white hover:border-stone-300'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="w-8 h-8 rounded-xl bg-blue-600 text-white font-black text-xs flex items-center justify-center shadow-xs">
+                          G
                         </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-sans font-bold text-sm text-white block">PayRex Payment Gateway</span>
-                            <span className="text-[9px] bg-amber-400 text-stone-950 font-mono font-bold px-1.5 py-0.2 rounded">Sandbox</span>
-                          </div>
-                          <span className="font-sans text-[11px] text-stone-300 block">GCash • Maya • QR Ph • Visa / Mastercard</span>
+                        <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                          selectedPaymentMethod === 'gcash' ? 'border-blue-600 bg-blue-600' : 'border-stone-300'
+                        }`}>
+                          {selectedPaymentMethod === 'gcash' && <CheckCircle2 className="w-3.5 h-3.5 text-white" />}
                         </div>
                       </div>
-                      <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
-                    </div>
+                      <div>
+                        <span className="font-sans font-bold text-xs text-stone-900 block">GCash</span>
+                        <span className="text-[10px] text-stone-500 block font-sans">E-Wallet Instant Transfer</span>
+                      </div>
+                    </button>
 
-                    <div className="p-2.5 bg-stone-950/80 rounded-xl border border-stone-800 text-[10px] text-stone-400 font-mono flex items-center justify-between">
-                      <span className="text-amber-300/90 truncate">API Key: pk_test_GxXYUz...</span>
-                      <span className="text-emerald-400 font-semibold">200 OK Connection</span>
-                    </div>
+                    {/* Maya Option */}
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPaymentMethod('maya')}
+                      className={`p-3.5 rounded-2xl border-2 transition-all flex flex-col justify-between text-left cursor-pointer ${
+                        selectedPaymentMethod === 'maya'
+                          ? 'border-emerald-600 bg-emerald-50/70 shadow-sm'
+                          : 'border-stone-200 bg-white hover:border-stone-300'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white font-black text-xs flex items-center justify-center shadow-xs">
+                          M
+                        </div>
+                        <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                          selectedPaymentMethod === 'maya' ? 'border-emerald-600 bg-emerald-600' : 'border-stone-300'
+                        }`}>
+                          {selectedPaymentMethod === 'maya' && <CheckCircle2 className="w-3.5 h-3.5 text-white" />}
+                        </div>
+                      </div>
+                      <div>
+                        <span className="font-sans font-bold text-xs text-stone-900 block">Maya</span>
+                        <span className="text-[10px] text-stone-500 block font-sans">E-Wallet & Card Transfer</span>
+                      </div>
+                    </button>
                   </div>
                 </div>
 
@@ -413,7 +657,7 @@ export const CheckoutModal: React.FC = () => {
                       ) : (
                         <>
                           <Lock className="w-4 h-4" />
-                          <span className="font-sans">Confirm & Pay ₱{total?.toLocaleString()}</span>
+                          <span className="font-sans">Pay ₱{total?.toLocaleString()} via {selectedPaymentMethod === 'gcash' ? 'GCash' : 'Maya'}</span>
                         </>
                       )}
                     </button>
