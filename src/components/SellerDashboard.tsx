@@ -24,7 +24,11 @@ import {
   MapPin,
   Clock,
   ExternalLink,
+  ChevronLeft,
   ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  Search,
   Boxes,
   Layers,
   Minus,
@@ -37,6 +41,8 @@ import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
 import { Product, ConditionGrade, Order } from '../types';
 import { CATEGORIES, ERAS, SIZES, CONDITIONS } from '../data/mockData';
+import { SellerAnalytics } from './SellerAnalytics';
+import { useBodyScrollLock } from '../lib/useBodyScrollLock';
 
 
 const createImage = (url: string) =>
@@ -138,6 +144,9 @@ export const SellerDashboard: React.FC = () => {
   const imgRef = useRef<HTMLImageElement>(null);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
 
+  const isAnyDashboardModalOpen = isUploadingNew || !!editingProduct || isBulkSaleModalOpen || !!deleteModalItems || !!archiveModalItems || !!removeSaleModalItems || (isCropModalOpen && !!imageToCrop);
+  useBodyScrollLock(isAnyDashboardModalOpen);
+
   const showCroppedImage = useCallback(async () => {
     try {
       if (!imageToCrop || !completedCrop || !imgRef.current) return;
@@ -215,15 +224,112 @@ export const SellerDashboard: React.FC = () => {
   const [tagsInput, setTagsInput] = useState('');
   const [stockQuantity, setStockQuantity] = useState<number>(1);
   const [successToast, setSuccessToast] = useState('');
+  const [formError, setFormError] = useState('');
+
+  const MAX_PRICE_LIMIT = 999999999;
 
   // Seller's isolated items only
   const sellerProducts = useMemo(() => {
     if (!currentUser) return [];
     return products.filter(p => 
       p.sellerId === currentUser.id || 
-      (currentUser.boutiqueName && p.sellerBoutique.toLowerCase() === currentUser.boutiqueName.toLowerCase())
+      (!p.sellerId && currentUser.boutiqueName && p.sellerBoutique?.toLowerCase() === currentUser.boutiqueName.toLowerCase())
     );
   }, [products, currentUser]);
+
+  // Search, Dropdowns & Pagination State for Managed Inventory
+  const [inventorySearchQuery, setInventorySearchQuery] = useState('');
+  const [inventoryCategoryFilter, setInventoryCategoryFilter] = useState('All');
+  const [inventoryEraFilter, setInventoryEraFilter] = useState('All');
+  const [inventorySortBy, setInventorySortBy] = useState<'default' | 'price-desc' | 'price-asc' | 'views-desc' | 'name'>('default');
+  const [inventoryCurrentPage, setInventoryCurrentPage] = useState(1);
+  const INVENTORY_ITEMS_PER_PAGE = 20;
+
+  // Distinct Categories & Eras for Inventory Dropdowns
+  const distinctInventoryCategories = useMemo(() => {
+    const set = new Set<string>();
+    sellerProducts.forEach(p => {
+      if (p.category) set.add(p.category);
+    });
+    return Array.from(set).sort();
+  }, [sellerProducts]);
+
+  const distinctInventoryEras = useMemo(() => {
+    const set = new Set<string>();
+    sellerProducts.forEach(p => {
+      if (p.era) set.add(p.era);
+    });
+    return Array.from(set).sort();
+  }, [sellerProducts]);
+
+  // Filtered & sorted seller products based on search query & 3 dropdowns
+  const filteredSellerProducts = useMemo(() => {
+    let result = [...sellerProducts];
+
+    // Search query
+    if (inventorySearchQuery.trim()) {
+      const q = inventorySearchQuery.toLowerCase().trim();
+      result = result.filter(p => {
+        const titleMatch = p.title?.toLowerCase().includes(q);
+        const brandMatch = p.brand?.toLowerCase().includes(q);
+        const categoryMatch = p.category?.toLowerCase().includes(q);
+        const eraMatch = p.era?.toLowerCase().includes(q);
+        const sizeMatch = p.size?.toLowerCase().includes(q);
+        const colorMatch = p.color?.toLowerCase().includes(q);
+        const conditionMatch = p.condition?.toLowerCase().includes(q);
+        const notesMatch = p.conditionNotes?.toLowerCase().includes(q);
+        const tagsMatch = p.tags?.some(t => t.toLowerCase().includes(q));
+        const priceMatch = p.price?.toString().includes(q);
+        const stockMatch = p.stock?.toString().includes(q);
+        const statusMatch = p.status?.toLowerCase().includes(q);
+        return (
+          titleMatch ||
+          brandMatch ||
+          categoryMatch ||
+          eraMatch ||
+          sizeMatch ||
+          colorMatch ||
+          conditionMatch ||
+          notesMatch ||
+          tagsMatch ||
+          priceMatch ||
+          stockMatch ||
+          statusMatch
+        );
+      });
+    }
+
+    // Category dropdown filter
+    if (inventoryCategoryFilter !== 'All') {
+      result = result.filter(p => p.category === inventoryCategoryFilter);
+    }
+
+    // Era dropdown filter
+    if (inventoryEraFilter !== 'All') {
+      result = result.filter(p => p.era === inventoryEraFilter);
+    }
+
+    // Sort dropdown
+    if (inventorySortBy === 'price-desc') {
+      result.sort((a, b) => (b.price || 0) - (a.price || 0));
+    } else if (inventorySortBy === 'price-asc') {
+      result.sort((a, b) => (a.price || 0) - (b.price || 0));
+    } else if (inventorySortBy === 'views-desc') {
+      result.sort((a, b) => (b.viewsCount || 0) - (a.viewsCount || 0));
+    } else if (inventorySortBy === 'name') {
+      result.sort((a, b) => a.title.localeCompare(b.title));
+    }
+
+    return result;
+  }, [sellerProducts, inventorySearchQuery, inventoryCategoryFilter, inventoryEraFilter, inventorySortBy]);
+
+  const totalInventoryPages = Math.max(1, Math.ceil(filteredSellerProducts.length / INVENTORY_ITEMS_PER_PAGE));
+  const safeInventoryPage = Math.min(Math.max(1, inventoryCurrentPage), totalInventoryPages);
+
+  const paginatedSellerProducts = useMemo(() => {
+    const startIdx = (safeInventoryPage - 1) * INVENTORY_ITEMS_PER_PAGE;
+    return filteredSellerProducts.slice(startIdx, startIdx + INVENTORY_ITEMS_PER_PAGE);
+  }, [filteredSellerProducts, safeInventoryPage, INVENTORY_ITEMS_PER_PAGE]);
 
   // Derive category-based measurement mode
   const effectiveMeasurementMode = useMemo(() => {
@@ -238,12 +344,15 @@ export const SellerDashboard: React.FC = () => {
     return 'tops';
   }, [category, measurementMode]);
 
-  // Multi-select Handlers
+  // Multi-select Handlers (supports select all filtered items or page items)
   const toggleSelectAll = () => {
-    if (selectedProductIds.length === sellerProducts.length && sellerProducts.length > 0) {
-      setSelectedProductIds([]);
+    const targetItems = filteredSellerProducts.length > 0 ? filteredSellerProducts : sellerProducts;
+    const targetIds = targetItems.map(p => p.id);
+    const isAllSelected = targetIds.length > 0 && targetIds.every(id => selectedProductIds.includes(id));
+    if (isAllSelected) {
+      setSelectedProductIds(prev => prev.filter(id => !targetIds.includes(id)));
     } else {
-      setSelectedProductIds(sellerProducts.map(p => p.id));
+      setSelectedProductIds(prev => Array.from(new Set([...prev, ...targetIds])));
     }
   };
 
@@ -474,6 +583,16 @@ export const SellerDashboard: React.FC = () => {
     e.preventDefault();
     if (!title.trim() || !brand.trim() || price <= 0) return;
 
+    if (price > MAX_PRICE_LIMIT) {
+      setFormError(`Boutique price is exceeding the maximum limit of ₱999,999,999.`);
+      return;
+    }
+
+    if (originalRetailEstimate && originalRetailEstimate > MAX_PRICE_LIMIT) {
+      setFormError(`Estimated original retail is exceeding the maximum limit of ₱999,999,999.`);
+      return;
+    }
+
     const wearDetails = wearDetailText
       .split('\n')
       .map(s => s.trim())
@@ -674,48 +793,14 @@ export const SellerDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* KPI Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-        <div className="bg-white p-5 rounded-2xl border border-stone-200 shadow-xs flex items-center justify-between">
-          <div>
-            <span className="text-[11px] font-sans uppercase text-stone-500 font-bold block">Active Listings</span>
-            <span className="font-sans text-3xl font-bold text-stone-950 mt-1 block">{activeCount}</span>
-          </div>
-          <div className="w-12 h-12 rounded-xl bg-amber-100/60 text-amber-900 flex items-center justify-center">
-            <Package className="w-6 h-6" />
-          </div>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl border border-stone-200 shadow-xs flex items-center justify-between">
-          <div>
-            <span className="text-[11px] font-sans uppercase text-stone-500 font-bold block">Archived / Sold Items</span>
-            <span className="font-sans text-3xl font-bold text-stone-950 mt-1 block">{soldCount}</span>
-          </div>
-          <div className="w-12 h-12 rounded-xl bg-stone-100 text-stone-700 flex items-center justify-center">
-            <RefreshCw className="w-6 h-6" />
-          </div>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl border border-stone-200 shadow-xs flex items-center justify-between">
-          <div>
-            <span className="text-[11px] font-sans uppercase text-stone-500 font-bold block">Total Inventory Value</span>
-            <span className="font-sans text-3xl font-bold text-emerald-900 mt-1 block">₱{totalValuation?.toLocaleString()}</span>
-          </div>
-          <div className="w-12 h-12 rounded-xl bg-emerald-100/60 text-emerald-900 flex items-center justify-center font-bold text-xl font-sans">
-            ₱
-          </div>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl border border-stone-200 shadow-xs flex items-center justify-between">
-          <div>
-            <span className="text-[11px] font-sans uppercase text-stone-500 font-bold block">Total Garment Views</span>
-            <span className="font-sans text-3xl font-bold text-amber-900 mt-1 block">{totalViews?.toLocaleString()}</span>
-          </div>
-          <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 flex items-center justify-center">
-            <Eye className="w-6 h-6" />
-          </div>
-        </div>
-      </div>
+      {/* Interactive KPI & Visual Charts Analytics */}
+      <SellerAnalytics
+        products={sellerProducts}
+        activeCount={activeCount || 0}
+        soldCount={soldCount || 0}
+        totalValuation={totalValuation || 0}
+        totalViews={totalViews || 0}
+      />
 
       {/* UPLOAD / EDIT FORM POPUP MODAL */}
       {isUploadingNew && (
@@ -861,25 +946,81 @@ export const SellerDashboard: React.FC = () => {
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block font-semibold text-stone-700 mb-1">Boutique Price (₱)</label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block font-semibold text-stone-700">Boutique Price (₱)</label>
+                        {price > MAX_PRICE_LIMIT && (
+                          <span className="text-[10px] font-bold text-rose-600 animate-pulse">
+                            Exceeds Limit
+                          </span>
+                        )}
+                      </div>
                       <input
                         type="number"
                         required
                         min={1}
+                        max={MAX_PRICE_LIMIT}
                         value={price || ''}
-                        onChange={(e) => setPrice(Math.max(1, parseInt(e.target.value) || 1))}
-                        className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-stone-900 focus:ring-1 focus:ring-amber-800 focus:outline-none font-normal"
+                        onChange={(e) => {
+                          const val = e.target.value === '' ? 0 : parseInt(e.target.value, 10);
+                          setPrice(isNaN(val) ? 0 : val);
+                          if (formError) setFormError('');
+                        }}
+                        className={`w-full px-3 py-2 bg-stone-50 border rounded-lg text-stone-900 focus:outline-none font-normal transition-colors ${
+                          price > MAX_PRICE_LIMIT
+                            ? 'border-rose-500 focus:ring-1 focus:ring-rose-500 bg-rose-50/50 text-rose-950 font-bold'
+                            : 'border-stone-300 focus:ring-1 focus:ring-amber-800'
+                        }`}
                       />
+                      {price > MAX_PRICE_LIMIT ? (
+                        <p className="text-[11px] text-rose-600 font-semibold mt-1 flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3 shrink-0" />
+                          <span>Exceeding limit of ₱999,999,999</span>
+                        </p>
+                      ) : (
+                        price > 0 && (
+                          <p className="text-[10px] text-stone-500 mt-0.5 font-sans">
+                            ₱{price.toLocaleString()}
+                          </p>
+                        )
+                      )}
                     </div>
                     <div>
-                      <label className="block font-semibold text-stone-700 mb-1">Est. Original Retail (₱)</label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block font-semibold text-stone-700">Est. Original Retail (₱)</label>
+                        {Boolean(originalRetailEstimate && originalRetailEstimate > MAX_PRICE_LIMIT) && (
+                          <span className="text-[10px] font-bold text-rose-600 animate-pulse">
+                            Exceeds Limit
+                          </span>
+                        )}
+                      </div>
                       <input
                         type="number"
                         min={1}
+                        max={MAX_PRICE_LIMIT}
                         value={originalRetailEstimate || ''}
-                        onChange={(e) => setOriginalRetailEstimate(Math.max(1, parseInt(e.target.value) || 1))}
-                        className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-stone-900 focus:ring-1 focus:ring-amber-800 focus:outline-none font-normal"
+                        onChange={(e) => {
+                          const val = e.target.value === '' ? 0 : parseInt(e.target.value, 10);
+                          setOriginalRetailEstimate(isNaN(val) ? 0 : val);
+                          if (formError) setFormError('');
+                        }}
+                        className={`w-full px-3 py-2 bg-stone-50 border rounded-lg text-stone-900 focus:outline-none font-normal transition-colors ${
+                          Boolean(originalRetailEstimate && originalRetailEstimate > MAX_PRICE_LIMIT)
+                            ? 'border-rose-500 focus:ring-1 focus:ring-rose-500 bg-rose-50/50 text-rose-950 font-bold'
+                            : 'border-stone-300 focus:ring-1 focus:ring-amber-800'
+                        }`}
                       />
+                      {Boolean(originalRetailEstimate && originalRetailEstimate > MAX_PRICE_LIMIT) ? (
+                        <p className="text-[11px] text-rose-600 font-semibold mt-1 flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3 shrink-0" />
+                          <span>Exceeding limit of ₱999,999,999</span>
+                        </p>
+                      ) : (
+                        Boolean(originalRetailEstimate && originalRetailEstimate > 0) && (
+                          <p className="text-[10px] text-stone-500 mt-0.5 font-sans">
+                            ₱{originalRetailEstimate?.toLocaleString()}
+                          </p>
+                        )
+                      )}
                     </div>
                   </div>
 
@@ -1178,7 +1319,7 @@ export const SellerDashboard: React.FC = () => {
                         </>
                       )}
 
-                      {(effectiveMeasurementMode === 'footwear' || effectiveMeasurementMode === 'all') && effectiveMeasurementMode !== 'tops' && effectiveMeasurementMode !== 'bottoms' && (
+                      {(effectiveMeasurementMode === 'footwear' || effectiveMeasurementMode === 'all') && (
                         <>
                           <div>
                             <label className="block font-medium text-stone-700 mb-0.5 text-[11px] font-sans">Insole / Footbed Length (in)</label>
@@ -1235,12 +1376,20 @@ export const SellerDashboard: React.FC = () => {
 
               </div>
 
+              {formError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs font-semibold text-rose-800 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{formError}</span>
+                </div>
+              )}
+
               <div className="flex items-center justify-end gap-3 pt-4 border-t border-stone-200">
                 <button
                   type="button"
                   onClick={() => {
                     setIsUploadingNew(false);
                     setEditingProduct(null);
+                    setFormError('');
                   }}
                   className="px-4 py-2 border border-stone-300 text-xs font-semibold text-stone-700 rounded-xl hover:bg-stone-100 transition-colors cursor-pointer"
                 >
@@ -1248,7 +1397,8 @@ export const SellerDashboard: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-2.5 bg-stone-950 hover:bg-amber-950 text-amber-50 text-xs font-bold rounded-xl shadow-md transition-colors cursor-pointer"
+                  disabled={price > MAX_PRICE_LIMIT || Boolean(originalRetailEstimate && originalRetailEstimate > MAX_PRICE_LIMIT)}
+                  className="px-6 py-2.5 bg-stone-950 hover:bg-amber-950 disabled:bg-stone-400 disabled:cursor-not-allowed text-amber-50 text-xs font-bold rounded-xl shadow-md transition-colors cursor-pointer"
                 >
                   {editingProduct ? 'Save Changes to Listing' : 'Publish Listing to Boutique'}
                 </button>
@@ -1280,102 +1430,181 @@ export const SellerDashboard: React.FC = () => {
             <p className="mt-1">When buyers purchase your listed pieces, their orders and courier tracking updates will appear here automatically.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse font-sans">
-              <thead>
-                <tr className="bg-stone-50 border-b border-stone-200 font-sans text-[11px] text-stone-600">
-                  <th className="p-4">Order # & Customer</th>
-                  <th className="p-4">Items Sold</th>
-                  <th className="p-4">Order Total / Payout</th>
-                  <th className="p-4">Courier & Tracking Code</th>
-                  <th className="p-4">Logistics Status</th>
-                  <th className="p-4 text-right">Track Order</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-stone-100 font-sans">
-                {sellerOrders.map((ord, oIdx) => {
-                  const myItems = ord.items.filter(i => 
-                    !currentUser || 
-                    i.product.sellerId === currentUser.id || 
-                    (currentUser.role === 'seller' && currentUser.boutiqueName === i.product.sellerBoutique)
-                  );
-                  const itemsToShow = myItems.length > 0 ? myItems : ord.items;
-                  const currentScan = ord.courier?.timeline?.find(t => t.isCurrent) || ord.courier?.timeline?.[(ord.courier?.timeline?.length || 1) - 1];
+          <div>
+            {/* Mobile Cards View for Small Screens (< md) */}
+            <div className="md:hidden divide-y divide-stone-100 font-sans">
+              {sellerOrders.map((ord, oIdx) => {
+                const myItems = ord.items.filter(i => 
+                  !currentUser || 
+                  i.product.sellerId === currentUser.id || 
+                  (currentUser.role === 'seller' && currentUser.boutiqueName === i.product.sellerBoutique)
+                );
+                const itemsToShow = myItems.length > 0 ? myItems : ord.items;
+                const currentScan = ord.courier?.timeline?.find(t => t.isCurrent) || ord.courier?.timeline?.[(ord.courier?.timeline?.length || 1) - 1];
 
-                  return (
-                    <tr key={`${ord.id}-${oIdx}`} className="hover:bg-amber-50/30 transition-colors">
-                      <td className="p-4 font-sans">
-                        <div>
-                          <span className="font-bold text-stone-950 block">#{ord.orderNumber}</span>
-                          <span className="font-medium text-stone-700">{ord.shippingAddress.fullName}</span>
-                          <span className="text-[10px] text-stone-400 block flex items-center gap-1 mt-0.5">
-                            <MapPin className="w-3 h-3 text-stone-400" />
-                            {ord.shippingAddress.city}, {ord.shippingAddress.province}
-                          </span>
-                        </div>
-                      </td>
-
-                      <td className="p-4 font-sans">
-                        <div className="space-y-1">
-                          {itemsToShow.map((it, itIdx) => (
-                            <div key={`${it.product.id}-${itIdx}`} className="flex items-center gap-2">
-                              <img
-                                src={it.product?.images?.[0]}
-                                alt={it.product.title}
-                                className="w-7 h-8 object-cover rounded bg-stone-100 shrink-0"
-                              />
-                              <div className="truncate max-w-[180px]">
-                                <p className="font-semibold text-stone-900 truncate">{it.product.title}</p>
-                                <p className="text-[10px] text-stone-500 font-sans">Size {it.product.size} • ₱{it.priceAtPurchase?.toLocaleString()}</p>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </td>
-
-                      <td className="p-4 font-sans">
+                return (
+                  <div key={`mob-order-${ord.id}-${oIdx}`} className="p-4 space-y-3 bg-white">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <span className="font-bold text-stone-950 text-sm">#{ord.orderNumber}</span>
+                        <p className="text-xs font-semibold text-stone-800">{ord.shippingAddress.fullName}</p>
+                        <p className="text-[10px] text-stone-400 flex items-center gap-1 mt-0.5">
+                          <MapPin className="w-3 h-3 text-stone-400 shrink-0" />
+                          <span>{ord.shippingAddress.city}, {ord.shippingAddress.province}</span>
+                        </p>
+                      </div>
+                      <div className="text-right">
                         <div className="font-serif font-bold text-sm text-stone-950">
                           ₱{ord.total?.toLocaleString()}
                         </div>
-                        <span className="text-[10px] font-sans text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                          {ord.paymentMethod.toUpperCase()} Paid
+                        <span className="text-[9px] font-sans text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 uppercase font-bold">
+                          {ord.paymentMethod} Paid
                         </span>
-                      </td>
+                      </div>
+                    </div>
 
-                      <td className="p-4 font-sans">
-                        <div className="text-stone-900 font-semibold text-[11px]">{ord.courier.provider}</div>
-                        <div className="text-[10px] text-stone-500">{ord.courier.trackingNumber}</div>
-                        <div className="text-[10px] text-amber-900 font-sans mt-0.5 flex items-center gap-1">
-                          <Clock className="w-3 h-3 text-amber-700" />
-                          <span>{ord.courier.estimatedDelivery}</span>
+                    {/* Order Items */}
+                    <div className="space-y-1.5 bg-stone-50 p-2.5 rounded-xl border border-stone-100">
+                      {itemsToShow.map((it, itIdx) => (
+                        <div key={`mob-it-${it.product.id}-${itIdx}`} className="flex items-center gap-2">
+                          <img
+                            src={it.product?.images?.[0]}
+                            alt={it.product.title}
+                            className="w-8 h-9 object-cover rounded bg-stone-100 shrink-0 border border-stone-200"
+                          />
+                          <div className="truncate flex-1 min-w-0">
+                            <p className="font-semibold text-stone-900 text-xs truncate">{it.product.title}</p>
+                            <p className="text-[10px] text-stone-500 font-sans">
+                              Size {it.product.size} • ₱{it.priceAtPurchase?.toLocaleString()} {it.quantity && it.quantity > 1 ? `(Qty: ${it.quantity})` : ''}
+                            </p>
+                          </div>
                         </div>
-                      </td>
+                      ))}
+                    </div>
 
-                      <td className="p-4 font-sans">
-                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-950 border border-amber-300">
+                    {/* Logistics Status & Action */}
+                    <div className="flex items-center justify-between gap-2 pt-1">
+                      <div className="min-w-0 flex-1">
+                        <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-950 border border-amber-300">
                           <span className="w-1.5 h-1.5 rounded-full bg-amber-600 animate-pulse"></span>
-                          <span>{currentScan?.status || ord.orderStatus}</span>
+                          <span className="truncate">{currentScan?.status || ord.orderStatus}</span>
                         </div>
-                        <div className="text-[10px] text-stone-500 mt-1 truncate max-w-[180px]">
-                          {currentScan?.location}
-                        </div>
-                      </td>
+                        <p className="text-[10px] text-stone-500 mt-1 truncate">
+                          {ord.courier.provider} • {ord.courier.trackingNumber}
+                        </p>
+                      </div>
+                      <button
+                        id={`mob-track-seller-order-${ord.orderNumber}`}
+                        onClick={() => openOrderTracking(ord.id)}
+                        className="inline-flex items-center gap-1.5 px-3 py-2 bg-stone-900 hover:bg-amber-950 text-amber-100 rounded-lg text-xs font-semibold shadow-xs transition-colors shrink-0 cursor-pointer"
+                      >
+                        <Truck className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Track</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
 
-                      <td className="p-4 text-right font-sans">
-                        <button
-                          id={`track-seller-order-${ord.orderNumber}`}
-                          onClick={() => openOrderTracking(ord.id)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-stone-900 hover:bg-amber-950 text-amber-100 rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer"
-                        >
-                          <Truck className="w-3.5 h-3.5 text-amber-400" />
-                          <span>Track Parcel</span>
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            {/* Desktop Table View for Medium+ Screens (>= md) */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse font-sans">
+                <thead>
+                  <tr className="bg-stone-50 border-b border-stone-200 font-sans text-[11px] text-stone-600">
+                    <th className="p-4">Order # & Customer</th>
+                    <th className="p-4">Items Sold</th>
+                    <th className="p-4">Order Total / Payout</th>
+                    <th className="p-4">Courier & Tracking Code</th>
+                    <th className="p-4">Logistics Status</th>
+                    <th className="p-4 text-right">Track Order</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-stone-100 font-sans">
+                  {sellerOrders.map((ord, oIdx) => {
+                    const myItems = ord.items.filter(i => 
+                      !currentUser || 
+                      i.product.sellerId === currentUser.id || 
+                      (currentUser.role === 'seller' && currentUser.boutiqueName === i.product.sellerBoutique)
+                    );
+                    const itemsToShow = myItems.length > 0 ? myItems : ord.items;
+                    const currentScan = ord.courier?.timeline?.find(t => t.isCurrent) || ord.courier?.timeline?.[(ord.courier?.timeline?.length || 1) - 1];
+
+                    return (
+                      <tr key={`${ord.id}-${oIdx}`} className="hover:bg-amber-50/30 transition-colors">
+                        <td className="p-4 font-sans">
+                          <div>
+                            <span className="font-bold text-stone-950 block">#{ord.orderNumber}</span>
+                            <span className="font-medium text-stone-700">{ord.shippingAddress.fullName}</span>
+                            <span className="text-[10px] text-stone-400 block flex items-center gap-1 mt-0.5">
+                              <MapPin className="w-3 h-3 text-stone-400" />
+                              {ord.shippingAddress.city}, {ord.shippingAddress.province}
+                            </span>
+                          </div>
+                        </td>
+
+                        <td className="p-4 font-sans">
+                          <div className="space-y-1">
+                            {itemsToShow.map((it, itIdx) => (
+                              <div key={`${it.product.id}-${itIdx}`} className="flex items-center gap-2">
+                                <img
+                                  src={it.product?.images?.[0]}
+                                  alt={it.product.title}
+                                  className="w-7 h-8 object-cover rounded bg-stone-100 shrink-0"
+                                />
+                                <div className="truncate max-w-[180px]">
+                                  <p className="font-semibold text-stone-900 truncate">{it.product.title}</p>
+                                  <p className="text-[10px] text-stone-500 font-sans">Size {it.product.size} • ₱{it.priceAtPurchase?.toLocaleString()}</p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </td>
+
+                        <td className="p-4 font-sans">
+                          <div className="font-serif font-bold text-sm text-stone-950">
+                            ₱{ord.total?.toLocaleString()}
+                          </div>
+                          <span className="text-[10px] font-sans text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                            {ord.paymentMethod.toUpperCase()} Paid
+                          </span>
+                        </td>
+
+                        <td className="p-4 font-sans">
+                          <div className="text-stone-900 font-semibold text-[11px]">{ord.courier.provider}</div>
+                          <div className="text-[10px] text-stone-500">{ord.courier.trackingNumber}</div>
+                          <div className="text-[10px] text-amber-900 font-sans mt-0.5 flex items-center gap-1">
+                            <Clock className="w-3 h-3 text-amber-700" />
+                            <span>{ord.courier.estimatedDelivery}</span>
+                          </div>
+                        </td>
+
+                        <td className="p-4 font-sans">
+                          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-950 border border-amber-300">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-600 animate-pulse"></span>
+                            <span>{currentScan?.status || ord.orderStatus}</span>
+                          </div>
+                          <div className="text-[10px] text-stone-500 mt-1 truncate max-w-[180px]">
+                            {currentScan?.location}
+                          </div>
+                        </td>
+
+                        <td className="p-4 text-right font-sans">
+                          <button
+                            id={`track-seller-order-${ord.orderNumber}`}
+                            onClick={() => openOrderTracking(ord.id)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-stone-900 hover:bg-amber-950 text-amber-100 rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+                          >
+                            <Truck className="w-3.5 h-3.5 text-amber-400" />
+                            <span>Track Parcel</span>
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>
@@ -1384,17 +1613,19 @@ export const SellerDashboard: React.FC = () => {
       <div className="bg-white rounded-2xl border border-stone-200 shadow-xs overflow-hidden font-sans">
         <div className="p-5 border-b border-stone-100 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h3 className="font-sans text-lg font-bold text-stone-900">
-              Managed Thrift Inventory ({sellerProducts.length})
-            </h3>
+            <div className="flex items-center gap-2.5">
+              <h3 className="font-sans text-lg font-bold text-stone-900">
+                Manage Thrift Inventory
+              </h3>
+            </div>
             <p className="text-xs text-stone-500 mt-0.5">
-              Click any detail to edit item specs, or select multiple pieces for bulk discounts & inventory management.
+              Search, filter, edit item specs, or select multiple pieces for bulk discounts & inventory management.
             </p>
           </div>
 
           {selectedProductIds.length > 0 && (
             <div className="flex items-center gap-2 flex-wrap animate-in fade-in">
-              <span className="px-2.5 py-1 bg-amber-100 text-amber-950 font-bold text-xs rounded-lg border border-amber-300">
+              <span className="hidden md:inline-flex px-2.5 py-1 bg-amber-100 text-amber-950 font-bold text-xs rounded-lg border border-amber-300">
                 {selectedProductIds.length} Selected
               </span>
 
@@ -1448,71 +1679,190 @@ export const SellerDashboard: React.FC = () => {
           )}
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse font-sans">
-            <thead>
-              <tr className="bg-stone-50 border-b border-stone-200 font-sans text-[11px] text-stone-600">
-                <th className="p-4 w-10 text-center">
-                  <input
-                    type="checkbox"
-                    checked={selectedProductIds.length === sellerProducts.length && sellerProducts.length > 0}
-                    onChange={toggleSelectAll}
-                    className="w-4 h-4 text-amber-800 border-stone-300 rounded cursor-pointer focus:ring-amber-800"
-                    title="Select / Deselect All Items"
-                  />
-                </th>
-                <th className="p-4">Garment</th>
-                <th className="p-4">Era & Category</th>
-                <th className="p-4">Condition & Wear</th>
-                <th className="p-4">Price</th>
-                <th className="p-4">Views</th>
-                <th className="p-4">Stock Status</th>
-                <th className="p-4 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-stone-100 font-sans">
-              {sellerProducts.map(item => {
+        {/* Search Bar & 3 Filter Dropdowns */}
+        <div className="p-4 bg-stone-50/70 border-b border-stone-200 flex flex-wrap items-center justify-between gap-3 font-sans">
+          <div className="flex flex-wrap items-center gap-2.5 flex-1 min-w-[280px]">
+            {/* Search Bar */}
+            <div className="relative flex-1 min-w-[200px] max-w-sm">
+              <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                value={inventorySearchQuery}
+                onChange={(e) => {
+                  setInventorySearchQuery(e.target.value);
+                  setInventoryCurrentPage(1);
+                }}
+                placeholder="Search inventory by title, brand, era, size, price..."
+                className="w-full pl-9 pr-8 py-2 bg-white border border-stone-200 rounded-xl text-xs font-medium text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-amber-800/30 focus:border-amber-800 transition-all shadow-xs"
+              />
+              {inventorySearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInventorySearchQuery('');
+                    setInventoryCurrentPage(1);
+                  }}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-stone-400 hover:text-stone-600 rounded-md hover:bg-stone-100 cursor-pointer"
+                  title="Clear search"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* Dropdown 1: Category */}
+            <select
+              value={inventoryCategoryFilter}
+              onChange={(e) => {
+                setInventoryCategoryFilter(e.target.value);
+                setInventoryCurrentPage(1);
+              }}
+              className="px-2.5 py-2 bg-white rounded-xl border border-stone-200 text-xs font-semibold text-stone-700 focus:outline-none focus:ring-2 focus:ring-amber-800/30 font-sans cursor-pointer shadow-xs truncate max-w-[160px]"
+            >
+              <option value="All">All Categories ({distinctInventoryCategories.length})</option>
+              {distinctInventoryCategories.map(cat => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
+            </select>
+
+            {/* Dropdown 2: Era */}
+            <select
+              value={inventoryEraFilter}
+              onChange={(e) => {
+                setInventoryEraFilter(e.target.value);
+                setInventoryCurrentPage(1);
+              }}
+              className="px-2.5 py-2 bg-white rounded-xl border border-stone-200 text-xs font-semibold text-stone-700 focus:outline-none focus:ring-2 focus:ring-amber-800/30 font-sans cursor-pointer shadow-xs truncate max-w-[150px]"
+            >
+              <option value="All">All Eras ({distinctInventoryEras.length})</option>
+              {distinctInventoryEras.map(era => (
+                <option key={era} value={era}>{era}</option>
+              ))}
+            </select>
+
+            {/* Dropdown 3: Sort By */}
+            <select
+              value={inventorySortBy}
+              onChange={(e) => {
+                setInventorySortBy(e.target.value as any);
+                setInventoryCurrentPage(1);
+              }}
+              className="px-2.5 py-2 bg-white rounded-xl border border-stone-200 text-xs font-semibold text-stone-700 focus:outline-none focus:ring-2 focus:ring-amber-800/30 font-sans cursor-pointer shadow-xs"
+            >
+              <option value="default">Sort: Default</option>
+              <option value="price-desc">Price: High to Low</option>
+              <option value="price-asc">Price: Low to High</option>
+              <option value="views-desc">Most Views</option>
+              <option value="name">Alphabetical</option>
+            </select>
+          </div>
+
+          <div className="flex items-center gap-3 text-xs text-stone-600 font-sans">
+            <span className="font-semibold text-stone-700">
+              {filteredSellerProducts.length === 0 ? (
+                '0 items found'
+              ) : (
+                <>
+                  Showing <span className="text-stone-900 font-bold">{(safeInventoryPage - 1) * INVENTORY_ITEMS_PER_PAGE + 1}–{Math.min(safeInventoryPage * INVENTORY_ITEMS_PER_PAGE, filteredSellerProducts.length)}</span> of <span className="text-stone-900 font-bold">{filteredSellerProducts.length}</span>
+                  {(inventorySearchQuery || inventoryCategoryFilter !== 'All' || inventoryEraFilter !== 'All') && filteredSellerProducts.length !== sellerProducts.length && (
+                    <span className="text-stone-400 font-normal"> (filtered from {sellerProducts.length})</span>
+                  )}
+                </>
+              )}
+            </span>
+          </div>
+        </div>
+
+        {/* Empty State for Search Results or Empty Inventory */}
+        {filteredSellerProducts.length === 0 ? (
+          <div className="p-12 text-center text-stone-500 font-sans">
+            <div className="w-12 h-12 rounded-full bg-stone-100 flex items-center justify-center mx-auto mb-3 text-stone-400">
+              <Search className="w-6 h-6" />
+            </div>
+            <p className="font-bold text-stone-900 text-base mb-1">
+              {inventorySearchQuery ? 'No matching pieces found' : 'Your inventory is empty'}
+            </p>
+            <p className="text-xs text-stone-500 max-w-sm mx-auto mb-4">
+              {inventorySearchQuery
+                ? `No items found matching "${inventorySearchQuery}". Try adjusting your search keywords.`
+                : 'Start listing vintage pieces to build and manage your curated thrift collection.'}
+            </p>
+            {inventorySearchQuery && (
+              <button
+                type="button"
+                onClick={() => {
+                  setInventorySearchQuery('');
+                  setInventoryCurrentPage(1);
+                }}
+                className="px-4 py-2 bg-stone-900 hover:bg-stone-800 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
+              >
+                Clear Search
+              </button>
+            )}
+          </div>
+        ) : (
+          <>
+            {/* Mobile View for Small Screens (< md) */}
+            <div className="md:hidden px-4 py-2.5 bg-stone-50 border-b border-stone-200 flex items-center justify-between gap-2 font-sans">
+              <label className="flex items-center gap-2 text-xs font-bold text-stone-800 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={
+                    filteredSellerProducts.length > 0 && 
+                    filteredSellerProducts.every(p => selectedProductIds.includes(p.id))
+                  }
+                  onChange={toggleSelectAll}
+                  className="w-4 h-4 text-amber-800 border-stone-300 rounded cursor-pointer focus:ring-amber-800"
+                />
+                <span>Select All ({filteredSellerProducts.length})</span>
+              </label>
+              {selectedProductIds.length > 0 && (
+                <span className="text-[11px] font-bold text-amber-900 bg-amber-100/90 px-2 py-0.5 rounded border border-amber-300">
+                  {selectedProductIds.length} selected
+                </span>
+              )}
+            </div>
+
+            <div className="md:hidden divide-y divide-stone-100 font-sans">
+              {paginatedSellerProducts.map(item => {
                 const isSelected = selectedProductIds.includes(item.id);
                 return (
-                  <tr key={item.id} className={`transition-colors ${isSelected ? 'bg-amber-50/50' : 'hover:bg-stone-50/60'}`}>
-                    <td className="p-4 text-center">
+                  <div key={`mob-inv-${item.id}`} className={`p-4 space-y-3 transition-colors ${isSelected ? 'bg-amber-50/50' : 'bg-white'}`}>
+                    <div className="flex items-start gap-3">
                       <input
                         type="checkbox"
                         checked={isSelected}
                         onChange={() => toggleSelectItem(item.id)}
-                        className="w-4 h-4 text-amber-800 border-stone-300 rounded cursor-pointer focus:ring-amber-800"
+                        className="w-4 h-4 text-amber-800 border-stone-300 rounded cursor-pointer focus:ring-amber-800 mt-1 shrink-0"
                       />
-                    </td>
-                    <td className="p-4">
-                      <div className="flex items-center gap-3">
-                        <img
-                          src={item?.images?.[0]}
-                          alt={item.title}
-                          className="w-12 h-14 object-cover rounded-lg bg-stone-100 shrink-0 cursor-pointer"
+                      <img
+                        src={item?.images?.[0]}
+                        alt={item.title}
+                        className="w-16 h-18 object-cover rounded-xl bg-stone-100 shrink-0 cursor-pointer border border-stone-200"
+                        onClick={() => openEditModal(item)}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p 
                           onClick={() => openEditModal(item)}
-                        />
-                        <div>
-                          <p 
-                            onClick={() => openEditModal(item)}
-                            className="font-bold text-stone-900 hover:text-amber-900 cursor-pointer transition-colors"
-                            title="Click to edit item"
-                          >
-                            {item.title}
-                          </p>
-                          <p className="text-[10px] text-amber-900 uppercase font-semibold font-sans">{item.brand} • Size {item.size}</p>
+                          className="font-bold text-stone-900 text-sm hover:text-amber-900 cursor-pointer transition-colors leading-tight line-clamp-2"
+                          title="Click to edit item"
+                        >
+                          {item.title}
+                        </p>
+                        <p className="text-[10px] text-amber-900 uppercase font-semibold mt-0.5">
+                          {item.brand} • Size {item.size} • {item.era}
+                        </p>
+                        <div className="flex items-center gap-1.5 mt-1 text-[10px] text-stone-500">
+                          <span className="font-semibold text-stone-700">{item.condition}</span>
+                          <span>•</span>
+                          <span className="flex items-center gap-0.5"><Eye className="w-3 h-3 text-stone-400" />{item.viewsCount || 0} views</span>
                         </div>
                       </div>
-                    </td>
-                    <td className="p-4 font-sans text-stone-700">
-                      <div className="font-semibold text-stone-900">{item.era} Era</div>
-                      <div className="text-[10px] text-stone-500 font-sans">{item.category}</div>
-                    </td>
-                    <td className="p-4 font-sans">
-                      <span className="font-semibold block text-stone-900">{item.condition}</span>
-                      <span className="text-[10px] text-stone-500 line-clamp-1">{item.conditionNotes}</span>
-                    </td>
-                    <td className="p-4 font-sans text-xs">
-                      <div className="flex flex-col gap-1">
+                    </div>
+
+                    {/* Price and Stock Controls on Mobile */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-stone-100">
+                      <div>
                         <div className="flex items-baseline gap-1.5 font-bold text-stone-950 text-sm">
                           <span>₱{item.price?.toLocaleString()}</span>
                           {item.isOnSale && item.regularPrice && (
@@ -1522,144 +1872,419 @@ export const SellerDashboard: React.FC = () => {
                           )}
                         </div>
                         {item.isOnSale && (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-rose-100 text-rose-800 text-[9px] font-bold rounded uppercase w-fit font-sans">
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.2 bg-rose-100 text-rose-800 text-[9px] font-bold rounded uppercase w-fit font-sans">
                             <Tag className="w-2.5 h-2.5" />
                             {item.regularPrice && item.regularPrice > item.price
                               ? `${Math.round(((item.regularPrice - item.price) / item.regularPrice) * 100)}% OFF`
-                              : 'On Sale'}
-                          </span>
-                        )}
-                        {item.originalRetailEstimate && (
-                          <span className="text-[10px] text-stone-500 font-sans">
-                            Est. Orig: ₱{item.originalRetailEstimate?.toLocaleString()}
+                              : 'Sale'}
                           </span>
                         )}
                       </div>
-                    </td>
-                    <td className="p-4 font-sans text-center">
-                      <div className="flex flex-col items-center justify-center text-stone-500">
-                        <span className="font-bold text-stone-900 text-sm flex items-center gap-1.5"><Eye className="w-3.5 h-3.5 text-stone-400" />{item.viewsCount || 0}</span>
-                        <span className="text-[10px] uppercase tracking-wider font-semibold">Views</span>
-                      </div>
-                    </td>
-                    <td className="p-4 font-sans">
-                      <div className="flex items-center gap-2">
-                        <div className="flex items-center gap-1 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const currentStock = item.stock !== undefined ? item.stock : (item.status === 'sold' ? 0 : 1);
-                              const newStock = Math.max(0, currentStock - 1);
-                              updateProduct(item.id, { 
-                                stock: newStock,
-                                status: newStock === 0 ? 'sold' : 'available'
-                              });
-                            }}
-                            disabled={item.stock === 0 || item.status === 'sold'}
-                            className="w-5 h-5 rounded bg-stone-100 hover:bg-stone-200 text-stone-700 flex items-center justify-center text-xs font-bold disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
-                            title="Reduce stock (-1)"
-                          >
-                            <Minus className="w-3 h-3" />
-                          </button>
-                          
-                          <input
-                            type="number"
-                            min={0}
-                            value={item.stock !== undefined ? item.stock : (item.status === 'sold' ? 0 : 1)}
-                            onChange={(e) => {
-                              const val = parseInt(e.target.value, 10);
-                              const newStock = isNaN(val) ? 0 : Math.max(0, val);
-                              updateProduct(item.id, { 
-                                stock: newStock,
-                                status: newStock === 0 ? 'sold' : 'available'
-                              });
-                            }}
-                            className="w-12 px-1 py-0.5 text-center font-sans font-bold text-xs border border-stone-300 rounded bg-stone-50 hover:bg-white focus:bg-white focus:ring-1 focus:ring-amber-800 focus:outline-none transition-all text-stone-950"
-                            title="Click or type to edit stock quantity directly"
-                          />
 
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const currentStock = item.stock !== undefined ? item.stock : (item.status === 'sold' ? 0 : 1);
-                              const newStock = currentStock + 1;
-                              updateProduct(item.id, { 
-                                stock: newStock,
-                                status: 'available'
-                              });
-                            }}
-                            className="w-5 h-5 rounded bg-stone-100 hover:bg-stone-200 text-stone-700 flex items-center justify-center text-xs font-bold transition-colors cursor-pointer"
-                            title="Increase stock (+1)"
-                          >
-                            <Plus className="w-3 h-3" />
-                          </button>
-                        </div>
-
-                        <div
-                          className={`px-2 py-1 rounded text-[10px] font-sans font-bold leading-tight shrink-0 select-none ${
-                            item.status === 'available' && (item.stock || 0) > 0
-                              ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
-                              : 'bg-rose-100 text-rose-900 border border-rose-300'
-                          }`}
+                      {/* Stock inline editor */}
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const currentStock = item.stock !== undefined ? item.stock : (item.status === 'sold' ? 0 : 1);
+                            const newStock = Math.max(0, currentStock - 1);
+                            updateProduct(item.id, { 
+                              stock: newStock,
+                              status: newStock === 0 ? 'sold' : 'available'
+                            });
+                          }}
+                          disabled={item.stock === 0 || item.status === 'sold'}
+                          className="w-6 h-6 rounded bg-stone-100 hover:bg-stone-200 text-stone-700 flex items-center justify-center text-xs font-bold disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                         >
-                          {item.status === 'available' && (item.stock || 0) > 0 ? (
-                            (item.stock || 0) > 1 ? (
-                              <span className="font-sans font-bold block whitespace-nowrap">
-                                {item.stock} Pieces Available
-                              </span>
-                            ) : (
-                              <span className="font-sans font-bold block whitespace-nowrap">
-                                1 Piece Available
-                              </span>
-                            )
-                          ) : (
-                            <span className="font-sans font-bold whitespace-nowrap">✕ Sold Out</span>
-                          )}
-                        </div>
+                          <Minus className="w-3 h-3" />
+                        </button>
+                        <input
+                          type="number"
+                          min={0}
+                          value={item.stock !== undefined ? item.stock : (item.status === 'sold' ? 0 : 1)}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            const newStock = isNaN(val) ? 0 : Math.max(0, val);
+                            updateProduct(item.id, { 
+                              stock: newStock,
+                              status: newStock === 0 ? 'sold' : 'available'
+                            });
+                          }}
+                          className="w-10 px-1 py-0.5 text-center font-bold text-xs border border-stone-300 rounded bg-stone-50 text-stone-950"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const currentStock = item.stock !== undefined ? item.stock : (item.status === 'sold' ? 0 : 1);
+                            const newStock = currentStock + 1;
+                            updateProduct(item.id, { 
+                              stock: newStock,
+                              status: 'available'
+                            });
+                          }}
+                          className="w-6 h-6 rounded bg-stone-100 hover:bg-stone-200 text-stone-700 flex items-center justify-center text-xs font-bold transition-colors"
+                        >
+                          <Plus className="w-3 h-3" />
+                        </button>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          item.status === 'available' && (item.stock || 0) > 0
+                            ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                            : 'bg-rose-100 text-rose-900 border border-rose-300'
+                        }`}>
+                          {item.status === 'available' && (item.stock || 0) > 0
+                            ? `${item.stock || 1} left`
+                            : 'Sold Out'}
+                        </span>
                       </div>
-                    </td>
-                    <td className="p-4 text-right space-x-1 whitespace-nowrap font-sans">
+                    </div>
+
+                    {/* Mobile Actions Footer */}
+                    <div className="flex items-center justify-end gap-2 pt-2 border-t border-stone-100 text-xs">
                       <button
                         onClick={() => openEditModal(item)}
-                        className="p-1.5 text-stone-600 hover:text-amber-900 hover:bg-amber-100/60 rounded-lg transition-colors cursor-pointer"
-                        title="Edit Item Details"
+                        className="px-2.5 py-1 text-stone-700 bg-stone-100 hover:bg-stone-200 rounded-lg flex items-center gap-1 font-semibold"
                       >
-                        <Edit3 className="w-4 h-4" />
+                        <Edit3 className="w-3.5 h-3.5" />
+                        <span>Edit</span>
                       </button>
                       <button
                         onClick={() => openProductDetail(item)}
-                        className="p-1.5 text-stone-500 hover:text-stone-900 hover:bg-stone-100 rounded-lg transition-colors cursor-pointer"
-                        title="Inspect Listing"
+                        className="px-2.5 py-1 text-stone-700 bg-stone-100 hover:bg-stone-200 rounded-lg flex items-center gap-1 font-semibold"
                       >
-                        <Eye className="w-4 h-4" />
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>View</span>
                       </button>
                       <button
                         onClick={() => setArchiveModalItems([item])}
-                        className="p-1.5 text-stone-500 hover:text-amber-900 hover:bg-amber-100/60 rounded-lg transition-colors cursor-pointer"
-                        title="Archive Item (Set as Sold Out)"
+                        className="px-2.5 py-1 text-amber-900 bg-amber-50 hover:bg-amber-100 rounded-lg flex items-center gap-1 font-semibold border border-amber-200"
                       >
-                        <Archive className="w-4 h-4" />
+                        <Archive className="w-3.5 h-3.5" />
+                        <span>Archive</span>
                       </button>
                       <button
                         onClick={() => setDeleteModalItems([item])}
-                        className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                        title="Delete Listing Permanently"
+                        className="px-2.5 py-1 text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-lg flex items-center gap-1 font-semibold border border-rose-200"
                       >
-                        <Trash2 className="w-4 h-4" />
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Delete</span>
                       </button>
-                    </td>
-                  </tr>
+                    </div>
+                  </div>
                 );
               })}
-            </tbody>
-          </table>
-        </div>
+            </div>
+
+            {/* Desktop Table View for Medium+ Screens (>= md) */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse font-sans">
+                <thead>
+                  <tr className="bg-stone-50 border-b border-stone-200 font-sans text-[11px] text-stone-600">
+                    <th className="p-4 w-10 text-center">
+                      <input
+                        type="checkbox"
+                        checked={
+                          filteredSellerProducts.length > 0 && 
+                          filteredSellerProducts.every(p => selectedProductIds.includes(p.id))
+                        }
+                        onChange={toggleSelectAll}
+                        className="w-4 h-4 text-amber-800 border-stone-300 rounded cursor-pointer focus:ring-amber-800"
+                        title="Select / Deselect Filtered Items"
+                      />
+                    </th>
+                    <th className="p-4">Garment</th>
+                    <th className="p-4">Era & Category</th>
+                    <th className="p-4">Condition & Wear</th>
+                    <th className="p-4">Price</th>
+                    <th className="p-4">Views</th>
+                    <th className="p-4">Stock Status</th>
+                    <th className="p-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-stone-100 font-sans">
+                  {paginatedSellerProducts.map(item => {
+                    const isSelected = selectedProductIds.includes(item.id);
+                    return (
+                      <tr key={item.id} className={`transition-colors ${isSelected ? 'bg-amber-50/50' : 'hover:bg-stone-50/60'}`}>
+                        <td className="p-4 text-center">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleSelectItem(item.id)}
+                            className="w-4 h-4 text-amber-800 border-stone-300 rounded cursor-pointer focus:ring-amber-800"
+                          />
+                        </td>
+                        <td className="p-4">
+                          <div className="flex items-center gap-3">
+                            <img
+                              src={item?.images?.[0]}
+                              alt={item.title}
+                              className="w-12 h-14 object-cover rounded-lg bg-stone-100 shrink-0 cursor-pointer"
+                              onClick={() => openEditModal(item)}
+                            />
+                            <div>
+                              <p 
+                                onClick={() => openEditModal(item)}
+                                className="font-bold text-stone-900 hover:text-amber-900 cursor-pointer transition-colors"
+                                title="Click to edit item"
+                              >
+                                {item.title}
+                              </p>
+                              <p className="text-[10px] text-amber-900 uppercase font-semibold font-sans">{item.brand} • Size {item.size}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="p-4 font-sans text-stone-700">
+                          <div className="font-semibold text-stone-900">{item.era} Era</div>
+                          <div className="text-[10px] text-stone-500 font-sans">{item.category}</div>
+                        </td>
+                        <td className="p-4 font-sans">
+                          <span className="font-semibold block text-stone-900">{item.condition}</span>
+                          <span className="text-[10px] text-stone-500 line-clamp-1">{item.conditionNotes}</span>
+                        </td>
+                        <td className="p-4 font-sans text-xs">
+                          <div className="flex flex-col gap-1">
+                            <div className="flex items-baseline gap-1.5 font-bold text-stone-950 text-sm">
+                              <span>₱{item.price?.toLocaleString()}</span>
+                              {item.isOnSale && item.regularPrice && (
+                                <span className="text-xs text-rose-700 line-through font-normal">
+                                  ₱{item.regularPrice?.toLocaleString()}
+                                </span>
+                              )}
+                            </div>
+                            {item.isOnSale && (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-rose-100 text-rose-800 text-[9px] font-bold rounded uppercase w-fit font-sans">
+                                <Tag className="w-2.5 h-2.5" />
+                                {item.regularPrice && item.regularPrice > item.price
+                                  ? `${Math.round(((item.regularPrice - item.price) / item.regularPrice) * 100)}% OFF`
+                                  : 'On Sale'}
+                              </span>
+                            )}
+                            {item.originalRetailEstimate && (
+                              <span className="text-[10px] text-stone-500 font-sans">
+                                Est. Orig: ₱{item.originalRetailEstimate?.toLocaleString()}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="p-4 font-sans text-center">
+                          <div className="flex flex-col items-center justify-center text-stone-500">
+                            <span className="font-bold text-stone-900 text-sm flex items-center gap-1.5"><Eye className="w-3.5 h-3.5 text-stone-400" />{item.viewsCount || 0}</span>
+                            <span className="text-[10px] uppercase tracking-wider font-semibold">Views</span>
+                          </div>
+                        </td>
+                        <td className="p-4 font-sans">
+                          <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const currentStock = item.stock !== undefined ? item.stock : (item.status === 'sold' ? 0 : 1);
+                                  const newStock = Math.max(0, currentStock - 1);
+                                  updateProduct(item.id, { 
+                                    stock: newStock,
+                                    status: newStock === 0 ? 'sold' : 'available'
+                                  });
+                                }}
+                                disabled={item.stock === 0 || item.status === 'sold'}
+                                className="w-5 h-5 rounded bg-stone-100 hover:bg-stone-200 text-stone-700 flex items-center justify-center text-xs font-bold disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                                title="Reduce stock (-1)"
+                              >
+                                <Minus className="w-3 h-3" />
+                              </button>
+                              
+                              <input
+                                type="number"
+                                min={0}
+                                value={item.stock !== undefined ? item.stock : (item.status === 'sold' ? 0 : 1)}
+                                onChange={(e) => {
+                                  const val = parseInt(e.target.value, 10);
+                                  const newStock = isNaN(val) ? 0 : Math.max(0, val);
+                                  updateProduct(item.id, { 
+                                    stock: newStock,
+                                    status: newStock === 0 ? 'sold' : 'available'
+                                  });
+                                }}
+                                className="w-12 px-1 py-0.5 text-center font-sans font-bold text-xs border border-stone-300 rounded bg-stone-50 hover:bg-white focus:bg-white focus:ring-1 focus:ring-amber-800 focus:outline-none transition-all text-stone-950"
+                                title="Click or type to edit stock quantity directly"
+                              />
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const currentStock = item.stock !== undefined ? item.stock : (item.status === 'sold' ? 0 : 1);
+                                  const newStock = currentStock + 1;
+                                  updateProduct(item.id, { 
+                                    stock: newStock,
+                                    status: 'available'
+                                  });
+                                }}
+                                className="w-5 h-5 rounded bg-stone-100 hover:bg-stone-200 text-stone-700 flex items-center justify-center text-xs font-bold transition-colors cursor-pointer"
+                                title="Increase stock (+1)"
+                              >
+                                <Plus className="w-3 h-3" />
+                              </button>
+                            </div>
+
+                            <div
+                              className={`px-2 py-1 rounded text-[10px] font-sans font-bold leading-tight shrink-0 select-none ${
+                                item.status === 'available' && (item.stock || 0) > 0
+                                  ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                                  : 'bg-rose-100 text-rose-900 border border-rose-300'
+                              }`}
+                            >
+                              {item.status === 'available' && (item.stock || 0) > 0 ? (
+                                (item.stock || 0) > 1 ? (
+                                  <span className="font-sans font-bold block whitespace-nowrap">
+                                    {item.stock} Pieces Available
+                                  </span>
+                                ) : (
+                                  <span className="font-sans font-bold block whitespace-nowrap">
+                                    1 Piece Available
+                                  </span>
+                                )
+                              ) : (
+                                <span className="font-sans font-bold whitespace-nowrap">✕ Sold Out</span>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="p-4 text-right space-x-1 whitespace-nowrap font-sans">
+                          <button
+                            onClick={() => openEditModal(item)}
+                            className="p-1.5 text-stone-600 hover:text-amber-900 hover:bg-amber-100/60 rounded-lg transition-colors cursor-pointer"
+                            title="Edit Item Details"
+                          >
+                            <Edit3 className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => openProductDetail(item)}
+                            className="p-1.5 text-stone-500 hover:text-stone-900 hover:bg-stone-100 rounded-lg transition-colors cursor-pointer"
+                            title="Inspect Listing"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => setArchiveModalItems([item])}
+                            className="p-1.5 text-stone-500 hover:text-amber-900 hover:bg-amber-100/60 rounded-lg transition-colors cursor-pointer"
+                            title="Archive Item (Set as Sold Out)"
+                          >
+                            <Archive className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => setDeleteModalItems([item])}
+                            className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                            title="Delete Listing Permanently"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination Controls Bar */}
+            <div className="p-4 bg-stone-50/80 border-t border-stone-200 flex flex-wrap items-center justify-between gap-3 font-sans">
+              <div className="text-xs text-stone-600">
+                Page <span className="font-bold text-stone-900">{safeInventoryPage}</span> of <span className="font-bold text-stone-900">{totalInventoryPages}</span>
+                <span className="text-stone-400 ml-1.5">
+                  ({filteredSellerProducts.length} total {filteredSellerProducts.length === 1 ? 'piece' : 'pieces'})
+                </span>
+              </div>
+
+              {totalInventoryPages > 1 && (
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setInventoryCurrentPage(1)}
+                    disabled={safeInventoryPage <= 1}
+                    className="p-1.5 rounded-lg border border-stone-200 bg-white hover:bg-stone-100 disabled:opacity-30 disabled:hover:bg-white text-stone-700 transition-colors cursor-pointer disabled:cursor-not-allowed shadow-xs"
+                    title="First page"
+                  >
+                    <ChevronsLeft className="w-3.5 h-3.5" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setInventoryCurrentPage(prev => Math.max(1, prev - 1))}
+                    disabled={safeInventoryPage <= 1}
+                    className="px-2.5 py-1.5 rounded-lg border border-stone-200 bg-white hover:bg-stone-100 disabled:opacity-30 disabled:hover:bg-white text-stone-700 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer disabled:cursor-not-allowed shadow-xs"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                    <span>Prev</span>
+                  </button>
+
+                  <div className="hidden sm:flex items-center gap-1">
+                    {Array.from({ length: totalInventoryPages }, (_, i) => i + 1).map((pageNum) => {
+                      const isCurrent = pageNum === safeInventoryPage;
+                      const isFirst = pageNum === 1;
+                      const isLast = pageNum === totalInventoryPages;
+                      const isAdjacent = Math.abs(pageNum - safeInventoryPage) <= 1;
+
+                      if (!isFirst && !isLast && !isAdjacent) {
+                        if (pageNum === 2 || pageNum === totalInventoryPages - 1) {
+                          return <span key={`dots-${pageNum}`} className="px-1 text-stone-400 text-xs">...</span>;
+                        }
+                        return null;
+                      }
+
+                      return (
+                        <button
+                          key={`page-${pageNum}`}
+                          type="button"
+                          onClick={() => setInventoryCurrentPage(pageNum)}
+                          className={`w-7 h-7 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                            isCurrent
+                              ? 'bg-amber-900 text-white shadow-xs'
+                              : 'bg-white hover:bg-stone-100 text-stone-700 border border-stone-200'
+                          }`}
+                        >
+                          {pageNum}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setInventoryCurrentPage(prev => Math.min(totalInventoryPages, prev + 1))}
+                    disabled={safeInventoryPage >= totalInventoryPages}
+                    className="px-2.5 py-1.5 rounded-lg border border-stone-200 bg-white hover:bg-stone-100 disabled:opacity-30 disabled:hover:bg-white text-stone-700 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer disabled:cursor-not-allowed shadow-xs"
+                  >
+                    <span>Next</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setInventoryCurrentPage(totalInventoryPages)}
+                    disabled={safeInventoryPage >= totalInventoryPages}
+                    className="p-1.5 rounded-lg border border-stone-200 bg-white hover:bg-stone-100 disabled:opacity-30 disabled:hover:bg-white text-stone-700 transition-colors cursor-pointer disabled:cursor-not-allowed shadow-xs"
+                    title="Last page"
+                  >
+                    <ChevronsRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </div>
 
       {/* Bulk Sale Modal */}
       {isBulkSaleModalOpen && selectedProductIds.length > 0 && (
-        <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-150 font-sans">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-stone-200">
+        <div 
+          className="fixed inset-0 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-150 font-sans"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setIsBulkSaleModalOpen(false);
+          }}
+        >
+          <div 
+            className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-stone-200"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between pb-3 mb-4 border-b border-stone-100">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-800 flex items-center justify-center shrink-0 font-bold">
@@ -1791,8 +2416,16 @@ export const SellerDashboard: React.FC = () => {
 
       {/* Permanent Delete Confirmation Modal */}
       {deleteModalItems && deleteModalItems.length > 0 && (
-        <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-150 font-sans">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-stone-200">
+        <div 
+          className="fixed inset-0 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-150 font-sans"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setDeleteModalItems(null);
+          }}
+        >
+          <div 
+            className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-stone-200"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-start justify-between pb-3 mb-4 border-b border-stone-100">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0 font-bold">
@@ -1891,8 +2524,16 @@ export const SellerDashboard: React.FC = () => {
 
       {/* Archive Confirmation Modal */}
       {archiveModalItems && archiveModalItems.length > 0 && (
-        <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-150 font-sans">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-stone-200">
+        <div 
+          className="fixed inset-0 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-150 font-sans"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setArchiveModalItems(null);
+          }}
+        >
+          <div 
+            className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-stone-200"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-start justify-between pb-3 mb-4 border-b border-stone-100">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-900 flex items-center justify-center shrink-0 font-bold">
@@ -1993,8 +2634,16 @@ export const SellerDashboard: React.FC = () => {
 
       {/* Remove Sale Confirmation Modal */}
       {removeSaleModalItems && removeSaleModalItems.length > 0 && (
-        <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-150 font-sans">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-stone-200">
+        <div 
+          className="fixed inset-0 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-150 font-sans"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setRemoveSaleModalItems(null);
+          }}
+        >
+          <div 
+            className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-stone-200"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-start justify-between pb-3 mb-4 border-b border-stone-100">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-900 flex items-center justify-center shrink-0 font-bold">
@@ -2097,8 +2746,16 @@ export const SellerDashboard: React.FC = () => {
       )}
       {/* Crop Modal */}
       {isCropModalOpen && imageToCrop && (
-        <div className="fixed inset-0 bg-stone-950/95 backdrop-blur-sm z-[70] flex flex-col items-center justify-center p-4">
-          <div className="relative w-full max-w-lg max-h-[70vh] bg-stone-900 rounded-2xl overflow-y-auto border border-stone-800 shadow-2xl flex items-center justify-center p-4">
+        <div 
+          className="fixed inset-0 bg-stone-950/95 backdrop-blur-sm z-[70] flex flex-col items-center justify-center p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !isUploadingImage) setIsCropModalOpen(false);
+          }}
+        >
+          <div 
+            className="relative w-full max-w-lg max-h-[70vh] bg-stone-900 rounded-2xl overflow-y-auto border border-stone-800 shadow-2xl flex items-center justify-center p-4"
+            onClick={(e) => e.stopPropagation()}
+          >
             <ReactCrop
               crop={crop}
               onChange={c => setCrop(c)}
@@ -2113,13 +2770,16 @@ export const SellerDashboard: React.FC = () => {
                   // Set initial crop to full image width/height
                   const { width, height } = e.currentTarget;
                   setCrop({ unit: '%', width: 100, height: 100, x: 0, y: 0 });
-                  setCompletedCrop({ unit: 'px', width, height, x: 0, y: 0 });
+                  setCompletedCrop({ unit: 'px', width: height, height: height, x: 0, y: 0 });
                 }}
               />
             </ReactCrop>
           </div>
           
-          <div className="mt-6 flex flex-col items-center gap-4 w-full max-w-lg">
+          <div 
+            className="mt-6 flex flex-col items-center gap-4 w-full max-w-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex gap-4 w-full px-6">
               <button
                 type="button"

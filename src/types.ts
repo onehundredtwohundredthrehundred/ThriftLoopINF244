@@ -134,6 +134,7 @@ export interface FilterState {
   maxPrice: number;
   inStockOnly: boolean;
   sortBy: 'latest' | 'sold_first' | 'price_low' | 'price_high' | 'rarity';
+  itemsPerPage?: number;
 }
 
 

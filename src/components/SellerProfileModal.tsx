@@ -7,6 +7,7 @@ import { doc, getDoc, collection, query, where, getDocs, setDoc, updateDoc, dele
 import { useAuth } from '../context/AuthContext';
 import { Review } from '../types';
 import { User } from '../types';
+import { useBodyScrollLock } from '../lib/useBodyScrollLock';
 
 interface SellerProfileModalProps { setCurrentView?: (view: "catalog" | "seller_dashboard") => void; }
 export const SellerProfileModal: React.FC<SellerProfileModalProps> = ({ setCurrentView }) => {
@@ -35,6 +36,8 @@ export const SellerProfileModal: React.FC<SellerProfileModalProps> = ({ setCurre
   const [isAllReviewsModalOpen, setIsAllReviewsModalOpen] = useState<boolean>(false);
   const [reviewFilterRating, setReviewFilterRating] = useState<number | 'All'>('All');
   const [reviewToDelete, setReviewToDelete] = useState<string | null>(null);
+
+  useBodyScrollLock(isSellerProfileOpen && !!selectedSellerInfo);
 
 
   useEffect(() => {
@@ -74,7 +77,7 @@ export const SellerProfileModal: React.FC<SellerProfileModalProps> = ({ setCurre
 
   const hasLeftReview = currentUser ? reviews.some(r => r.buyerId === currentUser.id) : false;
   const totalReviews = reviews.length;
-  const averageRating = totalReviews > 0 ? (reviews.reduce((acc, r) => acc + r.rating, 0) / totalReviews).toFixed(1) : (sellerData?.rating?.toFixed(1) || '5.0');
+  const averageRating = totalReviews > 0 ? (reviews.reduce((acc, r) => acc + r.rating, 0) / totalReviews).toFixed(1) : '0.0';
   const ratingCounts = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
   reviews.forEach(r => {
     if (r.rating >= 1 && r.rating <= 5) ratingCounts[r.rating as keyof typeof ratingCounts]++;
@@ -200,7 +203,7 @@ export const SellerProfileModal: React.FC<SellerProfileModalProps> = ({ setCurre
       setReviews(updatedReviews);
       
       const newTotal = updatedReviews.length;
-      const newAvg = newTotal > 0 ? (updatedReviews.reduce((acc, r) => acc + r.rating, 0) / newTotal) : 5.0;
+      const newAvg = newTotal > 0 ? (updatedReviews.reduce((acc, r) => acc + r.rating, 0) / newTotal) : 0.0;
       
       if (selectedSellerInfo?.sellerId) {
         const userRef = doc(db, 'users', selectedSellerInfo.sellerId);
@@ -284,7 +287,7 @@ export const SellerProfileModal: React.FC<SellerProfileModalProps> = ({ setCurre
       conditions: [],
       eras: [],
       minPrice: 0,
-      maxPrice: 50000,
+      maxPrice: Infinity,
       inStockOnly: false,
       sortBy: 'latest'
     });
@@ -299,16 +302,20 @@ export const SellerProfileModal: React.FC<SellerProfileModalProps> = ({ setCurre
   return (
     <div 
       id="seller-profile-modal-overlay"
-      className="fixed inset-0 bg-stone-950/80 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200"
+      className="fixed inset-0 bg-stone-950/80 backdrop-blur-xs z-50 flex items-center justify-center p-2.5 sm:p-6 animate-in fade-in duration-200"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) closeSellerProfile();
+      }}
     >
       <div 
         id="seller-profile-modal-container"
-        className="bg-white rounded-3xl max-w-3xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-stone-200 overflow-hidden relative animate-in zoom-in-95 duration-200"
+        className="bg-white rounded-2xl sm:rounded-3xl max-w-3xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-stone-200 overflow-hidden relative animate-in zoom-in-95 duration-200"
+        onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Header Bar */}
-        <div className="bg-stone-900 text-stone-100 px-6 py-4 flex items-center justify-between border-b border-stone-800 shrink-0">
+        <div className="bg-stone-900 text-stone-100 px-4 py-3 sm:px-6 sm:py-4 flex items-center justify-between border-b border-stone-800 shrink-0">
           <div className="flex items-center gap-2">
-            <Store className="w-5 h-5 text-amber-400" />
+            <Store className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400" />
             <span className="font-sans text-xs font-bold tracking-wider uppercase text-amber-200">
               Seller Profile
             </span>
@@ -317,27 +324,27 @@ export const SellerProfileModal: React.FC<SellerProfileModalProps> = ({ setCurre
             type="button"
             id="close-seller-profile-modal-btn"
             onClick={closeSellerProfile}
-            className="text-stone-400 hover:text-white p-1 rounded-full hover:bg-stone-800 transition-colors"
+            className="text-stone-400 hover:text-white p-1.5 rounded-full hover:bg-stone-800 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Modal Content Scroll Area */}
-        <div className="p-6 overflow-y-auto space-y-6">
+        <div className="p-3.5 sm:p-6 overflow-y-auto space-y-4 sm:space-y-6">
           
           {/* Seller Header Banner Card */}
-          <div className="bg-stone-50 border border-stone-200 rounded-2xl p-5 sm:p-6 relative overflow-hidden flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5">
-            <div className="flex items-center gap-4">
+          <div className="bg-stone-50 border border-stone-200 rounded-2xl p-4 sm:p-6 relative overflow-hidden flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 sm:gap-5">
+            <div className="flex items-start sm:items-center gap-3.5 sm:gap-4 w-full sm:w-auto">
               <img
                 src={avatarUrl}
                 alt={boutiqueName}
                 style={{ objectPosition: sellerData?.avatarPosition || '50% 50%' }}
-                className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover border-2 border-amber-800 shadow-md shrink-0 bg-stone-200"
+                className="w-14 h-14 sm:w-20 sm:h-20 rounded-xl sm:rounded-2xl object-cover border-2 border-amber-800 shadow-md shrink-0 bg-stone-200"
               />
-              <div className="space-y-1">
+              <div className="space-y-0.5 sm:space-y-1 min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <h2 className="font-sans text-2xl font-bold text-stone-950">
+                  <h2 className="font-sans text-xl sm:text-2xl font-bold text-stone-950 truncate">
                     {boutiqueName}
                   </h2>
                 </div>
@@ -346,26 +353,26 @@ export const SellerProfileModal: React.FC<SellerProfileModalProps> = ({ setCurre
                   Curated by <span className="font-semibold text-stone-900">{curatorName}</span>
                 </p>
 
-                <div className="flex items-center gap-3 text-xs text-stone-500 pt-1">
+                <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] sm:text-xs text-stone-500 pt-1">
                   <button type="button" onClick={() => setIsReviewsExpanded(!isReviewsExpanded)} className="flex items-center gap-1 text-amber-800 hover:text-amber-900 font-bold transition-colors">
-                    <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-500" />
-                    <span>{averageRating} {totalReviews > 0 ? `(${totalReviews})` : ''}</span>
-                    {isReviewsExpanded ? <ChevronUp className="w-3 h-3 text-stone-400 ml-1" /> : <ChevronDown className="w-3 h-3 text-stone-400 ml-1" />}
+                    <Star className={`w-3.5 h-3.5 ${totalReviews > 0 ? 'fill-amber-400 text-amber-500' : 'text-stone-300'}`} />
+                    <span>{averageRating} {totalReviews > 0 ? `(${totalReviews})` : '(No reviews)'}</span>
+                    {isReviewsExpanded ? <ChevronUp className="w-3 h-3 text-stone-400 ml-0.5" /> : <ChevronDown className="w-3 h-3 text-stone-400 ml-0.5" />}
                   </button>
-                  <span>•</span>
+                  <span className="text-stone-300">•</span>
                   <span>{sellerGarments.length} Active Listings</span>
-                  <span>•</span>
+                  <span className="text-stone-300">•</span>
                   <span>{totalStoreViews.toLocaleString()} Total Views</span>
                 </div>
               </div>
             </div>
 
-          <div className="flex flex-col gap-2 shrink-0 w-full sm:w-auto mt-4 sm:mt-0">
+          <div className="flex flex-col gap-2 shrink-0 w-full sm:w-auto mt-2 sm:mt-0">
             <button
               type="button"
               id="filter-store-catalog-btn"
               onClick={handleFilterCatalog}
-              className="w-full px-4 py-2 bg-white hover:bg-amber-50 border border-stone-300 hover:border-amber-400 text-stone-900 hover:text-amber-950 rounded-xl text-xs font-bold shadow-2xs transition-colors flex items-center justify-between gap-2"
+              className="w-full px-4 py-2.5 sm:py-2 bg-white hover:bg-amber-50 border border-stone-300 hover:border-amber-400 text-stone-900 hover:text-amber-950 rounded-xl text-xs font-bold shadow-2xs transition-colors flex items-center justify-between gap-2 cursor-pointer"
             >
               <span>Explore Store in Catalog</span>
               <ArrowRight className="w-3.5 h-3.5 text-amber-800" />
@@ -376,7 +383,7 @@ export const SellerProfileModal: React.FC<SellerProfileModalProps> = ({ setCurre
                 onClick={() => {
                   setIsStoreProfileModalOpen(true);
                 }}
-                className="w-full px-4 py-2 bg-white hover:bg-amber-50 border border-stone-300 hover:border-amber-400 text-stone-900 hover:text-amber-950 rounded-xl text-xs font-bold shadow-2xs transition-colors flex items-center justify-between gap-2"
+                className="w-full px-4 py-2.5 sm:py-2 bg-white hover:bg-amber-50 border border-stone-300 hover:border-amber-400 text-stone-900 hover:text-amber-950 rounded-xl text-xs font-bold shadow-2xs transition-colors flex items-center justify-between gap-2 cursor-pointer"
               >
                 <span>Store & Account Settings</span>
                 <ArrowRight className="w-3.5 h-3.5 text-amber-800" />
@@ -601,7 +608,7 @@ export const SellerProfileModal: React.FC<SellerProfileModalProps> = ({ setCurre
                 <p className="text-xs">Check back soon for upcoming thrift drops from this boutique!</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 gap-2.5 sm:gap-4">
                 {sellerGarments.map(item => (
                   <ProductCard key={item.id} product={item} />
                 ))}
@@ -614,9 +621,17 @@ export const SellerProfileModal: React.FC<SellerProfileModalProps> = ({ setCurre
 
             {/* Bio Modal */}
       {isBioModalOpen && (
-        <div className="fixed inset-0 z-[60] bg-stone-950/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl max-w-lg w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden relative animate-in zoom-in-95 duration-200">
-            <div className="bg-stone-900 text-stone-100 px-6 py-4 flex items-center justify-between shrink-0">
+        <div 
+          className="fixed inset-0 z-[60] bg-stone-950/80 backdrop-blur-xs flex items-center justify-center p-2.5 sm:p-6 animate-in fade-in duration-200"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setIsBioModalOpen(false);
+          }}
+        >
+          <div 
+            className="bg-white rounded-2xl sm:rounded-3xl max-w-lg w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden relative animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-stone-900 text-stone-100 px-4 py-3 sm:px-6 sm:py-4 flex items-center justify-between shrink-0">
               <h2 className="text-xs font-bold uppercase tracking-wider font-sans flex items-center gap-2">
                 Boutique Biography
               </h2>
@@ -627,7 +642,7 @@ export const SellerProfileModal: React.FC<SellerProfileModalProps> = ({ setCurre
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-6 overflow-y-auto">
+            <div className="p-4 sm:p-6 overflow-y-auto">
               <p className="text-sm text-stone-800 italic leading-relaxed font-sans whitespace-pre-wrap">
                 "{bio?.trim()}"
               </p>
@@ -638,9 +653,17 @@ export const SellerProfileModal: React.FC<SellerProfileModalProps> = ({ setCurre
 
       {/* All Reviews Modal */}
       {isAllReviewsModalOpen && (
-        <div className="fixed inset-0 z-[60] bg-stone-950/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl max-w-lg w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden relative animate-in zoom-in-95 duration-200">
-            <div className="bg-stone-900 text-stone-100 px-6 py-4 flex items-center justify-between shrink-0">
+        <div 
+          className="fixed inset-0 z-[60] bg-stone-950/80 backdrop-blur-xs flex items-center justify-center p-2.5 sm:p-6 animate-in fade-in duration-200"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setIsAllReviewsModalOpen(false);
+          }}
+        >
+          <div 
+            className="bg-white rounded-2xl sm:rounded-3xl max-w-lg w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden relative animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-stone-900 text-stone-100 px-4 py-3 sm:px-6 sm:py-4 flex items-center justify-between shrink-0">
               <h2 className="text-xs font-bold uppercase tracking-wider font-sans flex items-center gap-2">
                 <Star className="w-4 h-4 text-amber-400 fill-amber-400" />
                 All Reviews
@@ -653,7 +676,7 @@ export const SellerProfileModal: React.FC<SellerProfileModalProps> = ({ setCurre
               </button>
             </div>
             
-            <div className="p-4 border-b border-stone-100 flex gap-2 overflow-x-auto shrink-0">
+            <div className="p-3 sm:p-4 border-b border-stone-100 flex gap-2 overflow-x-auto shrink-0">
               {['All', 5, 4, 3, 2, 1].map(rating => (
                 <button
                   key={rating}
@@ -669,7 +692,7 @@ export const SellerProfileModal: React.FC<SellerProfileModalProps> = ({ setCurre
               ))}
             </div>
             
-            <div className="p-6 overflow-y-auto space-y-4 divide-y divide-stone-100">
+            <div className="p-4 sm:p-6 overflow-y-auto space-y-4 divide-y divide-stone-100">
               {reviews
                 .filter(r => reviewFilterRating === 'All' || r.rating === reviewFilterRating)
                 .map(review => (
@@ -726,8 +749,16 @@ export const SellerProfileModal: React.FC<SellerProfileModalProps> = ({ setCurre
 
       {/* Custom Delete Confirmation Modal */}
       {reviewToDelete && (
-        <div className="fixed inset-0 z-[70] bg-stone-950/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl animate-in zoom-in-95 duration-200">
+        <div 
+          className="fixed inset-0 z-[70] bg-stone-950/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setReviewToDelete(null);
+          }}
+        >
+          <div 
+            className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h3 className="text-lg font-bold text-stone-900 mb-2">Delete Review?</h3>
             <p className="text-sm text-stone-600 mb-6">Are you sure you want to delete this review? This action cannot be undone.</p>
             <div className="flex gap-3 justify-end">

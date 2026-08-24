@@ -29,9 +29,18 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setCurrentView }) =
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
 
+  const handleSearchChange = (value: string) => {
+    setFilterState(prev => ({ ...prev, searchQuery: value }));
+    if (currentView !== 'catalog') {
+      setCurrentView('catalog');
+    }
+  };
+
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setCurrentView('catalog');
+    if (currentView !== 'catalog') {
+      setCurrentView('catalog');
+    }
   };
 
   return (
@@ -42,16 +51,9 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setCurrentView }) =
           
           {/* Brand Logo & Tag */}
           <div className="flex items-center gap-8">
-            <button 
-              id="brand-logo-btn"
-              onClick={() => {
-                if (currentUser && currentUser.role === 'seller') {
-                  setCurrentView('seller_dashboard');
-                } else {
-                  setCurrentView('catalog');
-                }
-              }}
-              className="flex items-center gap-2.5 text-left group"
+            <div 
+              id="brand-logo"
+              className="flex items-center gap-2.5 text-left select-none pointer-events-none"
             >
               <div className="w-9 h-9 rounded-lg bg-stone-900 text-amber-100 flex items-center justify-center font-serif text-2xl font-bold tracking-tight">
                 TL
@@ -61,7 +63,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setCurrentView }) =
                   ThriftLoop
                 </span>
               </div>
-            </button>
+            </div>
 
             {/* Desktop Navigation Links - Appears when you are a seller */}
             {currentUser?.role === 'seller' && (
@@ -103,7 +105,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setCurrentView }) =
                 value={filterState.searchQuery}
                 onFocus={() => setIsSearchFocused(true)}
                 onBlur={() => setIsSearchFocused(false)}
-                onChange={(e) => setFilterState(prev => ({ ...prev, searchQuery: e.target.value }))}
+                onChange={(e) => handleSearchChange(e.target.value)}
                 className="w-full pl-9 pr-4 py-2 text-xs sm:text-sm bg-stone-100/80 border border-stone-200 rounded-full focus:outline-none focus:ring-2 focus:ring-stone-400 focus:bg-white transition-all text-stone-800 placeholder:text-stone-400"
               />
               <Search className="w-4 h-4 text-stone-400 absolute left-3 top-2.5" />
@@ -179,10 +181,15 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setCurrentView }) =
 
                 {/* Dropdown Menu */}
                 {isUserMenuOpen && (
-                  <div 
-                    id="user-dropdown-card"
-                    className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-xl border border-stone-200 py-2 z-50 animate-in fade-in slide-in-from-top-2 duration-150"
-                  >
+                  <>
+                    <div 
+                      className="fixed inset-0 z-40 cursor-default" 
+                      onClick={() => setIsUserMenuOpen(false)} 
+                    />
+                    <div 
+                      id="user-dropdown-card"
+                      className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-xl border border-stone-200 py-2 z-50 animate-in fade-in slide-in-from-top-2 duration-150"
+                    >
                     <div className="px-4 py-2.5 border-b border-stone-100">
                       <p className="text-xs text-stone-500 font-medium">Signed in as</p>
                       <div className="flex items-center justify-between gap-1.5 mt-0.5">
@@ -283,6 +290,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setCurrentView }) =
                       </button>
                     </div>
                   </div>
+                  </>
                 )}
               </div>
             ) : (
@@ -316,7 +324,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setCurrentView }) =
                 value={filterState.searchQuery}
                 onFocus={() => setIsSearchFocused(true)}
                 onBlur={() => setIsSearchFocused(false)}
-                onChange={(e) => setFilterState(prev => ({ ...prev, searchQuery: e.target.value }))}
+                onChange={(e) => handleSearchChange(e.target.value)}
                 className="w-full pl-9 pr-4 py-2 text-xs bg-stone-100 border border-stone-200 rounded-lg text-stone-800 focus:outline-none focus:ring-2 focus:ring-stone-400 focus:bg-white"
               />
               <Search className="w-4 h-4 text-stone-400 absolute left-3 top-2.5" />

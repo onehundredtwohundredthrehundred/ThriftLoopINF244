@@ -46,8 +46,15 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const { markAsSold, decrementStock } = useInventory();
   const { currentUser } = useAuth();
 
+  const prevUserIdRef = React.useRef<string | null | undefined>(undefined);
+
+  const getStorageKey = (userId?: string | null) => {
+    return userId ? `thriftloop_cart_user_${userId}` : `thriftloop_cart_guest`;
+  };
+
   const [cart, setCart] = useState<CartItem[]>(() => {
-    const saved = localStorage.getItem('thriftloop_cart');
+    const key = currentUser?.id ? `thriftloop_cart_user_${currentUser.id}` : `thriftloop_cart_guest`;
+    const saved = localStorage.getItem(key);
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
@@ -64,6 +71,54 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     return [];
   });
+
+  // Isolate and switch cart per user identity
+  useEffect(() => {
+    const currentUserId = currentUser?.id ?? null;
+    if (prevUserIdRef.current === undefined) {
+      prevUserIdRef.current = currentUserId;
+      return;
+    }
+
+    if (prevUserIdRef.current !== currentUserId) {
+      // If user signed out (currentUserId is null), reset cart to empty and do not leak user items to guest
+      if (!currentUserId) {
+        setCart([]);
+        localStorage.removeItem('thriftloop_cart_guest');
+        setIsCheckoutOpen(false);
+      } else {
+        // Logged in as a specific user - load their isolated saved cart
+        const userKey = getStorageKey(currentUserId);
+        const userSaved = localStorage.getItem(userKey);
+        if (userSaved) {
+          try {
+            const parsed = JSON.parse(userSaved);
+            if (Array.isArray(parsed)) {
+              setCart(parsed.map((item: any) => ({
+                ...item,
+                quantity: typeof item.quantity === 'number' && item.quantity > 0 ? item.quantity : 1,
+              })));
+            } else {
+              setCart([]);
+            }
+          } catch {
+            setCart([]);
+          }
+        } else {
+          setCart([]);
+        }
+      }
+      prevUserIdRef.current = currentUserId;
+    }
+  }, [currentUser?.id]);
+
+  // Persist cart to active user's storage key
+  useEffect(() => {
+    const key = getStorageKey(currentUser?.id ?? null);
+    localStorage.setItem(key, JSON.stringify(cart));
+    // Clean up any legacy shared cart
+    localStorage.removeItem('thriftloop_cart');
+  }, [cart, currentUser?.id]);
 
   const [orders, setOrders] = useState<Order[]>(() => {
     const saved = localStorage.getItem('thriftloop_orders');
@@ -134,9 +189,6 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => unsubscribe();
   }, []);
 
-  useEffect(() => {
-    localStorage.setItem('thriftloop_cart', JSON.stringify(cart));
-  }, [cart]);
 
   const addToCart = (product: Product, quantity: number = 1): { success: boolean; message: string } => {
     if (product.status === 'sold' || (product.stock !== undefined && product.stock <= 0)) {

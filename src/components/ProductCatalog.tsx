@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Search, 
   Filter, 
@@ -10,11 +10,18 @@ import {
   Tag,
   Sparkles,
   Layers,
-  Eye
+  Eye,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight
 } from 'lucide-react';
 import { useInventory } from '../context/InventoryContext';
 import { ProductCard } from './ProductCard';
 import { CATEGORIES, ERAS, SIZES, CONDITIONS } from '../data/mockData';
+import { useBodyScrollLock } from '../lib/useBodyScrollLock';
+
+const ITEMS_PER_PAGE_OPTIONS = [10, 20, 30, 50, 100];
 
 export const ProductCatalog: React.FC = () => {
   const { 
@@ -26,6 +33,55 @@ export const ProductCatalog: React.FC = () => {
 
   const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
   const [showUnhidePrompt, setShowUnhidePrompt] = useState(false);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+
+  useBodyScrollLock(showUnhidePrompt);
+
+  const itemsPerPage = filterState.itemsPerPage || 20;
+  const totalItems = filteredProducts.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / itemsPerPage));
+
+  // Reset or adjust page when filters or total pages change
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(1);
+    }
+  }, [totalPages, currentPage]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [
+    filterState.searchQuery,
+    filterState.categories,
+    filterState.eras,
+    filterState.sizes,
+    filterState.conditions,
+    filterState.minPrice,
+    filterState.maxPrice,
+    filterState.inStockOnly,
+    filterState.sortBy,
+    filterState.itemsPerPage
+  ]);
+
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = Math.min(startIndex + itemsPerPage, totalItems);
+  const paginatedProducts = useMemo(() => {
+    return filteredProducts.slice(startIndex, endIndex);
+  }, [filteredProducts, startIndex, endIndex]);
+
+  const handlePageChange = (newPage: number) => {
+    if (newPage < 1 || newPage > totalPages || newPage === currentPage) return;
+    setCurrentPage(newPage);
+    const catalogTop = document.getElementById('product-catalog-section');
+    if (catalogTop) {
+      catalogTop.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
+  const handleItemsPerPageChange = (num: number) => {
+    setFilterState(prev => ({ ...prev, itemsPerPage: num }));
+    setCurrentPage(1);
+  };
 
   const handleSortChange = (newSort: string) => {
     setFilterState(prev => ({ ...prev, sortBy: newSort as any }));
@@ -109,6 +165,33 @@ export const ProductCatalog: React.FC = () => {
   const vintageEras = ERAS.filter(e => e !== 'All Eras');
   const availableSizes = SIZES.filter(s => s !== 'All Sizes');
 
+  // Generate pagination page numbers array with ellipses
+  const getPageNumbers = () => {
+    const pages: (number | string)[] = [];
+    if (totalPages <= 7) {
+      for (let i = 1; i <= totalPages; i++) pages.push(i);
+    } else {
+      if (currentPage <= 4) {
+        for (let i = 1; i <= 5; i++) pages.push(i);
+        pages.push('...');
+        pages.push(totalPages);
+      } else if (currentPage >= totalPages - 3) {
+        pages.push(1);
+        pages.push('...');
+        for (let i = totalPages - 4; i <= totalPages; i++) pages.push(i);
+      } else {
+        pages.push(1);
+        pages.push('...');
+        pages.push(currentPage - 1);
+        pages.push(currentPage);
+        pages.push(currentPage + 1);
+        pages.push('...');
+        pages.push(totalPages);
+      }
+    }
+    return pages;
+  };
+
   return (
     <div id="product-catalog-section" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       
@@ -119,24 +202,44 @@ export const ProductCatalog: React.FC = () => {
             Boutique Collection
           </span>
           <h1 className="font-sans text-3xl sm:text-4xl font-bold text-stone-950 mt-1">
-            Curated Vintage Apparel
+            Curated Vintage Items
           </h1>
+          <p className="text-xs text-stone-600 font-sans mt-1">
+            Showing {totalItems > 0 ? `${startIndex + 1}–${endIndex} of ${totalItems}` : '0'} verified pieces
+          </p>
         </div>
 
-        {/* Sorting Dropdown & Mobile Filter Toggle */}
-        <div className="flex items-center gap-3">
+        {/* Sorting Dropdown & Items Per Page & Mobile Filter Toggle */}
+        <div className="flex flex-wrap items-center gap-3">
           <button
             id="mobile-filter-btn"
             onClick={() => setIsMobileFilterOpen(!isMobileFilterOpen)}
-            className="md:hidden flex items-center gap-2 px-3.5 py-2 bg-stone-900 text-amber-50 rounded-lg text-xs font-semibold"
+            className="md:hidden flex items-center gap-2 px-3.5 py-2 bg-stone-900 text-amber-50 rounded-lg text-xs font-semibold shadow-xs cursor-pointer"
           >
             <SlidersHorizontal className="w-4 h-4" />
             <span>Filters ({activeFiltersCount})</span>
           </button>
 
+          {/* Items Per Page Quick Select */}
+          <div className="flex items-center gap-2 bg-white border border-stone-300 rounded-lg px-3 py-1.5 shadow-xs">
+            <span className="text-xs text-stone-500 font-medium whitespace-nowrap">Per page:</span>
+            <select
+              id="header-items-per-page-select"
+              value={itemsPerPage}
+              onChange={(e) => handleItemsPerPageChange(Number(e.target.value))}
+              className="text-xs font-sans font-semibold text-stone-800 bg-transparent focus:outline-none cursor-pointer"
+            >
+              {ITEMS_PER_PAGE_OPTIONS.map(opt => (
+                <option key={opt} value={opt}>{opt} items</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Sort By Select */}
           <div className="flex items-center gap-2 bg-white border border-stone-300 rounded-lg px-3 py-1.5 shadow-xs">
             <span className="text-xs text-stone-500 font-medium whitespace-nowrap">Sort by:</span>
             <select
+              id="sort-by-select"
               value={filterState.sortBy}
               onChange={(e) => handleSortChange(e.target.value)}
               className="text-xs font-sans font-semibold text-stone-800 bg-transparent focus:outline-none cursor-pointer"
@@ -153,7 +256,7 @@ export const ProductCatalog: React.FC = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-12 gap-8 pt-8">
         
-        {/* LEFT SIDEBAR FILTERS (Desktop & Mobile Drawer) */}
+        {/* LEFT SIDEBAR FILTERS (Desktop & Mobile Dropdown) */}
         <aside className={`md:col-span-3 space-y-6 ${isMobileFilterOpen ? 'block' : 'hidden md:block'}`}>
           <div className="bg-white p-5 rounded-2xl border border-stone-200 shadow-xs space-y-6">
             
@@ -171,22 +274,22 @@ export const ProductCatalog: React.FC = () => {
                 <button
                   id="reset-all-filters-sidebar-btn"
                   onClick={resetFilters}
-                  className="text-[11px] font-semibold font-sans text-amber-800 hover:text-amber-950 flex items-center gap-1"
+                  className="text-[11px] font-semibold font-sans text-amber-800 hover:text-amber-950 flex items-center gap-1 cursor-pointer"
                 >
                   <RotateCcw className="w-3 h-3" /> Reset all
                 </button>
               )}
             </div>
 
-            {/* Keyword Search */}
-            <div>
+            {/* Keyword Search (Mobile Only) */}
+            <div className="md:hidden">
               <label className="block text-xs font-bold uppercase tracking-wider text-stone-700 mb-2 font-sans">
                 Search Tags / Keyword
               </label>
               <div className="relative">
                 <input
                   type="text"
-                  placeholder=""
+                  placeholder="e.g. carhartt, jacket, 90s"
                   value={filterState.searchQuery}
                   onChange={(e) => setFilterState(prev => ({ ...prev, searchQuery: e.target.value }))}
                   className="w-full pl-8 pr-7 py-1.5 text-xs font-sans bg-stone-50 border border-stone-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-800 text-stone-900"
@@ -443,8 +546,8 @@ export const ProductCatalog: React.FC = () => {
           </div>
         </aside>
 
-        {/* RIGHT PRODUCTS GRID */}
-        <main className="md:col-span-9 space-y-4">
+        {/* RIGHT PRODUCTS GRID & PAGINATION */}
+        <main className="md:col-span-9 space-y-6">
           
           {/* Active Filter Chips Pill Bar */}
           {activeFiltersCount > 0 && (
@@ -521,7 +624,7 @@ export const ProductCatalog: React.FC = () => {
               <button
                 id="clear-all-active-filter-chips-btn"
                 onClick={resetFilters}
-                className="text-xs font-semibold text-amber-900 hover:underline ml-auto pl-2"
+                className="text-xs font-semibold text-amber-900 hover:underline ml-auto pl-2 cursor-pointer"
               >
                 Clear all
               </button>
@@ -538,17 +641,117 @@ export const ProductCatalog: React.FC = () => {
               <button
                 id="empty-results-reset-filters-btn"
                 onClick={resetFilters}
-                className="mt-4 px-4 py-2 bg-stone-900 text-amber-50 text-xs font-semibold rounded-lg hover:bg-amber-900"
+                className="mt-4 px-4 py-2 bg-stone-900 text-amber-50 text-xs font-semibold rounded-lg hover:bg-amber-900 cursor-pointer"
               >
                 Reset All Filters
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredProducts.map(product => (
-                <ProductCard key={product.id} product={product} />
-              ))}
-            </div>
+            <>
+              {/* Product Cards Grid */}
+              <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-6">
+                {paginatedProducts.map(product => (
+                  <ProductCard key={product.id} product={product} />
+                ))}
+              </div>
+
+              {/* PAGINATION CONTROLS */}
+              {totalPages > 1 && (
+                <div className="mt-8 pt-6 border-t border-stone-200 flex flex-col sm:flex-row items-center justify-between gap-4 font-sans">
+                  
+                  {/* Results Count Summary */}
+                  <div className="text-xs text-stone-600">
+                    Showing <span className="font-bold text-stone-900">{startIndex + 1}</span>–<span className="font-bold text-stone-900">{endIndex}</span> of <span className="font-bold text-stone-900">{totalItems}</span> pieces (Page {currentPage} of {totalPages})
+                  </div>
+
+                  {/* Navigation Buttons */}
+                  <div className="flex items-center gap-1.5 flex-wrap justify-center">
+                    
+                    {/* First Page Button */}
+                    <button
+                      id="pagination-first-btn"
+                      onClick={() => handlePageChange(1)}
+                      disabled={currentPage === 1}
+                      className="p-2 rounded-lg border border-stone-200 bg-white text-stone-700 hover:bg-stone-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-2xs"
+                      title="First Page"
+                      aria-label="First page"
+                    >
+                      <ChevronsLeft className="w-4 h-4" />
+                    </button>
+
+                    {/* Previous Page Button */}
+                    <button
+                      id="pagination-prev-btn"
+                      onClick={() => handlePageChange(currentPage - 1)}
+                      disabled={currentPage === 1}
+                      className="flex items-center gap-1 px-3 py-2 rounded-lg border border-stone-200 bg-white text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-2xs"
+                      title="Previous Page"
+                      aria-label="Previous page"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                      <span className="hidden sm:inline">Prev</span>
+                    </button>
+
+                    {/* Page Numbers */}
+                    <div className="flex items-center gap-1">
+                      {getPageNumbers().map((page, idx) => {
+                        if (page === '...') {
+                          return (
+                            <span key={`ellipsis-${idx}`} className="px-2 text-stone-400 text-xs font-medium">
+                              ...
+                            </span>
+                          );
+                        }
+                        const pageNum = Number(page);
+                        const isActive = pageNum === currentPage;
+                        return (
+                          <button
+                            key={`page-${pageNum}`}
+                            id={`pagination-page-btn-${pageNum}`}
+                            onClick={() => handlePageChange(pageNum)}
+                            className={`min-w-[34px] h-[34px] rounded-lg text-xs font-bold transition-all flex items-center justify-center cursor-pointer ${
+                              isActive
+                                ? 'bg-amber-900 text-amber-100 shadow-xs scale-105'
+                                : 'bg-white text-stone-700 border border-stone-200 hover:bg-stone-100'
+                            }`}
+                            aria-current={isActive ? 'page' : undefined}
+                          >
+                            {pageNum}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Next Page Button */}
+                    <button
+                      id="pagination-next-btn"
+                      onClick={() => handlePageChange(currentPage + 1)}
+                      disabled={currentPage === totalPages}
+                      className="flex items-center gap-1 px-3 py-2 rounded-lg border border-stone-200 bg-white text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-2xs"
+                      title="Next Page"
+                      aria-label="Next page"
+                    >
+                      <span className="hidden sm:inline">Next</span>
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+
+                    {/* Last Page Button */}
+                    <button
+                      id="pagination-last-btn"
+                      onClick={() => handlePageChange(totalPages)}
+                      disabled={currentPage === totalPages}
+                      className="p-2 rounded-lg border border-stone-200 bg-white text-stone-700 hover:bg-stone-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-2xs"
+                      title="Last Page"
+                      aria-label="Last page"
+                    >
+                      <ChevronsRight className="w-4 h-4" />
+                    </button>
+
+                  </div>
+
+                </div>
+              )}
+            </>
           )}
         </main>
 
@@ -556,8 +759,16 @@ export const ProductCatalog: React.FC = () => {
 
       {/* Unhide Sold-Out Items Confirmation Modal */}
       {showUnhidePrompt && (
-        <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-150">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-stone-200 text-center font-sans">
+        <div 
+          className="fixed inset-0 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-150"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowUnhidePrompt(false);
+          }}
+        >
+          <div 
+            className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-stone-200 text-center font-sans"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-900 flex items-center justify-center mx-auto mb-3">
               <Eye className="w-6 h-6" />
             </div>

@@ -1,11 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { Store, User as UserIcon, RefreshCw, X, Trash2, Loader2, ShieldAlert } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Store, User as UserIcon, RefreshCw, X, Trash2, Loader2, ShieldAlert, AlertCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useInventory } from '../context/InventoryContext';
 import ReactCrop, { type Crop, type PixelCrop } from 'react-image-crop';
 import 'react-image-crop/dist/ReactCrop.css';
-import { useRef } from 'react';
-import { useCallback } from 'react';
+import { useBodyScrollLock } from '../lib/useBodyScrollLock';
 
 
 const createImage = (url: string) =>
@@ -64,6 +63,7 @@ export const AccountSettingsModal: React.FC = () => {
   // Profile Form State
   const [userName, setUserName] = useState('');
   const [userAvatar, setUserAvatar] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
     // Cropper State
   const [isCropModalOpen, setIsCropModalOpen] = useState(false);
   const [imageToCrop, setImageToCrop] = useState<string | null>(null);
@@ -81,13 +81,16 @@ export const AccountSettingsModal: React.FC = () => {
 
   const isSeller = currentUser?.role === 'seller';
 
+  useBodyScrollLock(isStoreProfileModalOpen);
+
   useEffect(() => {
     if (isStoreProfileModalOpen && currentUser) {
       setUserName(currentUser.name || '');
       setUserAvatar(currentUser.avatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=300&auto=format&fit=crop&q=80');
-      setStoreBoutiqueName(currentUser.boutiqueName || `${currentUser.name || 'Curator'}'s Boutique`);
+      setStoreBoutiqueName(currentUser.boutiqueName || 'Curated Boutique');
       setStoreBio(currentUser.boutiqueBio || '');
       setIsConfirmingDelete(false);
+      setErrorMessage('');
     }
   }, [isStoreProfileModalOpen, currentUser]);
 
@@ -154,12 +157,14 @@ export const AccountSettingsModal: React.FC = () => {
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorMessage('');
     setIsSaving(true);
+
+    const oldBoutiqueName = currentUser.boutiqueName;
 
     const updates: any = {
       name: userName.trim(),
       avatar: userAvatar.trim(),
-
     };
 
     if (isSeller) {
@@ -176,23 +181,25 @@ export const AccountSettingsModal: React.FC = () => {
           sellerBoutique: updates.boutiqueName,
           sellerName: updates.name,
           sellerAvatar: updates.avatar,
-        });
+        }, oldBoutiqueName);
       }
       setIsStoreProfileModalOpen(false);
     } else {
-      alert(res.error || 'Failed to update profile.');
+      setErrorMessage(res.error || 'Failed to update profile.');
     }
   };
 
   const handleDeleteAccount = async () => {
     setIsDeletingAccount(true);
+    setErrorMessage('');
     const res = await deleteAccount();
     setIsDeletingAccount(false);
     setIsConfirmingDelete(false);
-    setIsStoreProfileModalOpen(false);
 
-    if (!res.success && res.error) {
-      alert(res.error);
+    if (res.success) {
+      setIsStoreProfileModalOpen(false);
+    } else if (res.error) {
+      setErrorMessage(res.error);
     }
   };
 
@@ -202,10 +209,14 @@ export const AccountSettingsModal: React.FC = () => {
       <div 
         id="account-settings-modal-overlay"
         className="fixed inset-0 bg-stone-950/80 backdrop-blur-xs z-[60] flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200"
+        onClick={(e) => {
+          if (e.target === e.currentTarget) setIsStoreProfileModalOpen(false);
+        }}
       >
         <div 
           id="account-settings-modal-container"
           className="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-stone-200 relative animate-in zoom-in-95 duration-200 flex flex-col max-h-[85vh] overflow-hidden"
+          onClick={(e) => e.stopPropagation()}
         >
           {/* Fixed Header */}
           <div className="p-6 sm:p-7 pb-4 border-b border-stone-200 flex items-center justify-between shrink-0 bg-white">
@@ -290,21 +301,24 @@ export const AccountSettingsModal: React.FC = () => {
               {isSeller && (
                 <>
                   <div className="pt-2 border-t border-stone-100">
-                    <label className="block font-semibold text-amber-900 mb-1">
-                      Boutique / Store Name
-                    </label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block font-semibold text-amber-900">
+                        Boutique / Store Name
+                      </label>
+                      <span className={`text-[10px] font-mono ${storeBoutiqueName.length >= 30 ? 'text-amber-600 font-bold' : 'text-stone-400'}`}>
+                        {storeBoutiqueName.length}/30
+                      </span>
+                    </div>
                     <input
                       type="text"
                       required
+                      maxLength={30}
                       id="edit-boutique-name-input"
                       value={storeBoutiqueName}
                       onChange={(e) => setStoreBoutiqueName(e.target.value)}
                       placeholder="e.g. Manila Vintage Vault"
                       className="w-full px-3.5 py-2.5 bg-amber-50/50 border border-amber-300 rounded-xl font-semibold text-stone-900 focus:ring-2 focus:ring-amber-800 focus:outline-none"
                     />
-                    <p className="text-[10px] text-stone-500 mt-1">
-                      This store name will be shown on all your active and future garment listings.
-                    </p>
                   </div>
 
                   <div>
@@ -332,6 +346,14 @@ export const AccountSettingsModal: React.FC = () => {
                     />
                   </div>
                 </>
+              )}
+
+              {/* In-App Error Alert Banner */}
+              {errorMessage && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 font-medium flex items-center gap-2.5 animate-in fade-in duration-150">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{errorMessage}</span>
+                </div>
               )}
 
               {/* Form Action Buttons */}
@@ -389,8 +411,16 @@ export const AccountSettingsModal: React.FC = () => {
 
       {/* Account Deletion Confirmation Modal */}
       {isConfirmingDelete && (
-        <div className="fixed inset-0 bg-stone-950/80 backdrop-blur-xs z-[70] flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 border border-stone-200 shadow-2xl animate-in zoom-in-95">
+        <div 
+          className="fixed inset-0 bg-stone-950/80 backdrop-blur-xs z-[70] flex items-center justify-center p-4 animate-in fade-in"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !isDeletingAccount) setIsConfirmingDelete(false);
+          }}
+        >
+          <div 
+            className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 border border-stone-200 shadow-2xl animate-in zoom-in-95"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center gap-3 text-red-600 border-b border-stone-100 pb-3">
               <div className="w-10 h-10 rounded-2xl bg-red-100 text-red-700 flex items-center justify-center shrink-0">
                 <ShieldAlert className="w-5 h-5" />
@@ -435,8 +465,16 @@ export const AccountSettingsModal: React.FC = () => {
       )}
       {/* Crop Modal */}
       {isCropModalOpen && imageToCrop && (
-        <div className="fixed inset-0 bg-stone-950/95 backdrop-blur-sm z-[70] flex flex-col items-center justify-center p-4">
-          <div className="relative w-full max-w-lg max-h-[70vh] bg-stone-900 rounded-2xl overflow-y-auto border border-stone-800 shadow-2xl flex items-center justify-center p-4">
+        <div 
+          className="fixed inset-0 bg-stone-950/95 backdrop-blur-sm z-[70] flex flex-col items-center justify-center p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !isSaving) setIsCropModalOpen(false);
+          }}
+        >
+          <div 
+            className="relative w-full max-w-lg max-h-[70vh] bg-stone-900 rounded-2xl overflow-y-auto border border-stone-800 shadow-2xl flex items-center justify-center p-4"
+            onClick={(e) => e.stopPropagation()}
+          >
             <ReactCrop
               crop={crop}
               onChange={c => setCrop(c)}
@@ -461,7 +499,10 @@ export const AccountSettingsModal: React.FC = () => {
             </ReactCrop>
           </div>
           
-          <div className="mt-6 flex flex-col items-center gap-4 w-full max-w-lg">
+          <div 
+            className="mt-6 flex flex-col items-center gap-4 w-full max-w-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex gap-4 w-full px-6">
               <button
                 type="button"

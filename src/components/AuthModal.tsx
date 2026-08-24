@@ -13,6 +13,7 @@ import {
   Loader2
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useBodyScrollLock } from '../lib/useBodyScrollLock';
 
 export const AuthModal: React.FC = () => {
   const { 
@@ -39,6 +40,8 @@ export const AuthModal: React.FC = () => {
   const [isGoogleSubmitting, setIsGoogleSubmitting] = useState(false);
   const [isForgotPassword, setIsForgotPassword] = useState(false);
   const [forgotEmailSent, setForgotEmailSent] = useState(false);
+
+  useBodyScrollLock(isAuthModalOpen);
 
   if (!isAuthModalOpen) return null;
 
@@ -331,13 +334,19 @@ export const AuthModal: React.FC = () => {
                 {/* Boutique Name if registering as Seller */}
                 {authModalTab === 'register' && authModalRole === 'seller' && (
                   <div>
-                    <label className="block text-xs font-semibold text-stone-700 mb-1">
-                      Boutique / Store Name
-                    </label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-semibold text-stone-700">
+                        Boutique / Store Name
+                      </label>
+                      <span className={`text-[10px] font-mono ${boutiqueName.length >= 30 ? 'text-amber-600 font-bold' : 'text-stone-400'}`}>
+                        {boutiqueName.length}/30
+                      </span>
+                    </div>
                     <div className="relative">
                       <input
                         id="auth-boutique-input"
                         type="text"
+                        maxLength={30}
                         value={boutiqueName}
                         onChange={(e) => setBoutiqueName(e.target.value)}
                         placeholder="e.g. Manila Vintage Archive"
@@ -391,6 +400,7 @@ export const AuthModal: React.FC = () => {
                       id="auth-password-input"
                       type={showPassword ? 'text' : 'password'}
                       required
+                      autoComplete={authModalTab === 'login' ? 'current-password' : 'new-password'}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder="At least 6 characters"
@@ -398,9 +408,11 @@ export const AuthModal: React.FC = () => {
                     />
                     <Lock className="w-4 h-4 text-stone-400 absolute left-3 top-2.5" />
                     <button
+                      id="auth-toggle-password-visibility-btn"
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-2.5 text-stone-400 hover:text-stone-700"
+                      className="absolute right-3 top-2.5 text-stone-400 hover:text-stone-700 cursor-pointer"
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
                     >
                       {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>

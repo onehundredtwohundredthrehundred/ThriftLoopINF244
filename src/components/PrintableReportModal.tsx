@@ -13,11 +13,14 @@ import {
 import { useInventory } from '../context/InventoryContext';
 import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
+import { useBodyScrollLock } from '../lib/useBodyScrollLock';
 
 export const PrintableReportModal: React.FC = () => {
   const { isPrintReportOpen, setIsPrintReportOpen, products } = useInventory();
   const { currentUser } = useAuth();
   const { orders } = useCart();
+
+  useBodyScrollLock(isPrintReportOpen);
 
   if (!isPrintReportOpen) return null;
 
@@ -94,7 +97,7 @@ export const PrintableReportModal: React.FC = () => {
                   ThriftLoop Boutique Archive
                 </span>
               </div>
-              <p className="text-xs text-stone-500 font-mono">Curated Vintage Apparel & Boutique Inventory Registry</p>
+              <p className="text-xs text-stone-500 font-mono">Curated Vintage Items & Boutique Inventory Registry</p>
               <p className="text-xs text-stone-600 mt-1">
                 Boutique: <span className="font-bold">{currentUser?.boutiqueName || 'Retro Archive Manila'}</span>
               </p>

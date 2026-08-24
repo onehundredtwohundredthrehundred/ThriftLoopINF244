@@ -21,10 +21,11 @@ import { useInventory } from '../context/InventoryContext';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
 import { CONDITIONS } from '../data/mockData';
+import { useBodyScrollLock } from '../lib/useBodyScrollLock';
 
 export const ProductDetailModal: React.FC = () => {
   const { selectedProduct, isDetailModalOpen, setIsDetailModalOpen, openSellerProfile } = useInventory();
-  const { addToCart, cart } = useCart();
+  const { addToCart, updateQuantity, cart, setIsCartDrawerOpen } = useCart();
   const { currentUser } = useAuth();
   const [activeImageIdx, setActiveImageIdx] = useState(0);
   const [copyFeedback, setCopyFeedback] = useState(false);
@@ -37,6 +38,9 @@ export const ProductDetailModal: React.FC = () => {
   // Fullscreen Lightbox state
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
 
+  // Lock body scroll when modal or lightbox is active
+  useBodyScrollLock(isDetailModalOpen && !!selectedProduct);
+
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     const { left, top, width, height } = e.currentTarget.getBoundingClientRect();
     const x = Math.max(0, Math.min(100, ((e.clientX - left) / width) * 100));
@@ -45,19 +49,27 @@ export const ProductDetailModal: React.FC = () => {
   };
 
   useEffect(() => {
-    if (selectedProduct) {
-      setSelectedQuantity(1);
+    if (selectedProduct && isDetailModalOpen) {
+      const inCart = cart.find(i => i.product.id === selectedProduct.id);
+      setSelectedQuantity(inCart ? (inCart.quantity || 1) : 1);
       setActiveImageIdx(0);
       setIsLightboxOpen(false);
     }
-  }, [selectedProduct?.id]);
+  }, [selectedProduct?.id, isDetailModalOpen]);
 
   if (!isDetailModalOpen || !selectedProduct) return null;
 
   const inCartItem = cart.find(item => item.product.id === selectedProduct.id);
   const isInCart = !!inCartItem;
-  const isSold = selectedProduct.status === 'sold' || selectedProduct.stock <= 0;
-  const isOwnProduct = !!currentUser && (currentUser.id === selectedProduct.sellerId || (currentUser.role === 'seller' && currentUser.boutiqueName === selectedProduct.sellerBoutique));
+  const currentInCartQty = inCartItem?.quantity || 1;
+  const isQtyChanged = isInCart && selectedQuantity !== currentInCartQty;
+  const isSold = selectedProduct.status === 'sold' || (selectedProduct.stock !== undefined && selectedProduct.stock <= 0);
+  const defaultSellerIds = new Set(['user_seller_01', 'user_seller_02', 'curator']);
+  const isOwnProduct = !!currentUser && (
+    currentUser.id === selectedProduct.sellerId || 
+    (currentUser.role === 'seller' && currentUser.boutiqueName && selectedProduct.sellerBoutique?.toLowerCase() === currentUser.boutiqueName.toLowerCase()) ||
+    (currentUser.role === 'seller' && defaultSellerIds.has(selectedProduct.sellerId))
+  );
   const conditionConfig = CONDITIONS.find(c => c.grade === selectedProduct.condition) || CONDITIONS[1];
 
   const handleShare = () => {
@@ -106,11 +118,48 @@ export const ProductDetailModal: React.FC = () => {
           </div>
 
           {/* Modal Main Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 p-6 sm:p-8 max-h-[85vh] overflow-y-auto">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8 p-4 sm:p-8 max-h-[85vh] overflow-y-auto">
             
             {/* Left Column: Image Gallery & Inspection */}
             <div className="lg:col-span-6 space-y-4">
               
+              {/* MOBILE ONLY: Brand, Stock Status, Share & Title Above Image */}
+              <div className="block lg:hidden">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-bold text-amber-900 text-xs uppercase tracking-wider font-sans">
+                      {selectedProduct.brand}
+                    </span>
+                    <span className="text-stone-300">•</span>
+                    <span className={`text-[11px] font-sans px-2.5 py-0.5 rounded-full font-semibold border ${
+                      isSold
+                        ? 'bg-rose-50 text-rose-800 border-rose-200'
+                        : selectedProduct.stock > 1
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                        : 'bg-amber-50/90 text-amber-950 border-amber-300/80'
+                    }`}>
+                      {isSold
+                        ? '✕ Sold Out (0 in stock)'
+                        : selectedProduct.stock > 1
+                        ? `${selectedProduct.stock} Pieces Available`
+                        : '1 Piece Available'}
+                    </span>
+                  </div>
+
+                  <button 
+                    onClick={handleShare}
+                    className="text-stone-500 hover:text-stone-900 flex items-center gap-1 text-[11px] font-sans cursor-pointer"
+                  >
+                    <Share2 className="w-3.5 h-3.5" />
+                    <span>{copyFeedback ? 'Link Copied!' : 'Share'}</span>
+                  </button>
+                </div>
+
+                <h2 className="font-sans text-xl sm:text-2xl font-bold text-stone-950 leading-tight">
+                  {selectedProduct.title}
+                </h2>
+              </div>
+
               {/* Primary Large Image with Hover Zoom & Click to Fullscreen */}
               <div 
                 className="relative aspect-4/5 rounded-2xl overflow-hidden bg-stone-100 border border-stone-200 shadow-inner group cursor-pointer select-none"
@@ -196,6 +245,36 @@ export const ProductDetailModal: React.FC = () => {
                 </div>
               )}
 
+              {/* MOBILE ONLY: Price Block Above Seller Profile */}
+              <div className="block lg:hidden">
+                <div className="p-4 bg-white rounded-xl border border-stone-200 shadow-2xs">
+                  <div className="flex flex-col">
+                    <div className="flex items-baseline gap-2.5">
+                      <span className="font-sans text-2xl sm:text-3xl font-bold text-stone-950">
+                        ₱{selectedProduct.price?.toLocaleString()}
+                      </span>
+                      {selectedProduct.isOnSale && selectedProduct.regularPrice && (
+                        <span className="text-base text-rose-700 font-semibold line-through font-sans">
+                          ₱{selectedProduct.regularPrice?.toLocaleString()}
+                        </span>
+                      )}
+                      {selectedProduct.isOnSale && (
+                        <span className="px-2 py-0.5 bg-rose-600 text-white text-[10px] font-bold rounded uppercase tracking-wider font-sans">
+                          {selectedProduct.regularPrice && selectedProduct.regularPrice > selectedProduct.price
+                            ? `${Math.round(((selectedProduct.regularPrice - selectedProduct.price) / selectedProduct.regularPrice) * 100)}% OFF`
+                            : 'On Sale'}
+                        </span>
+                      )}
+                    </div>
+                    {selectedProduct.originalRetailEstimate && (
+                      <span className="text-xs text-stone-500 font-sans font-medium mt-1">
+                        Est. Original Retail: ₱{selectedProduct.originalRetailEstimate?.toLocaleString()}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               {/* Seller Boutique & Click to Filter */}
               <button
                 type="button"
@@ -219,7 +298,7 @@ export const ProductDetailModal: React.FC = () => {
                 </div>
                 <span className="text-xs font-semibold text-amber-800 bg-amber-50 group-hover:bg-amber-100 border border-amber-200/80 px-2.5 py-1 rounded-lg flex items-center gap-1 transition-colors">
                   <Store className="w-3.5 h-3.5" />
-                  <span>View Seller Profile →</span>
+                  <span>Visit →</span>
                 </span>
               </button>
 
@@ -228,8 +307,8 @@ export const ProductDetailModal: React.FC = () => {
             {/* Right Column: Garment Specs & Action */}
             <div className="lg:col-span-6 space-y-5">
               
-              {/* Brand, Share & Unique Archive Badge Moved Above Title */}
-              <div>
+              {/* DESKTOP ONLY: Brand, Share & Unique Archive Badge and Title */}
+              <div className="hidden lg:block">
                 <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-bold text-amber-900 text-xs uppercase tracking-wider font-sans">
@@ -266,8 +345,8 @@ export const ProductDetailModal: React.FC = () => {
                 </h2>
               </div>
 
-              {/* Clean Price block */}
-              <div className="p-4 bg-white rounded-xl border border-stone-200">
+              {/* DESKTOP ONLY: Clean Price block */}
+              <div className="hidden lg:block p-4 bg-white rounded-xl border border-stone-200">
                 <div className="flex flex-col">
                   <div className="flex items-baseline gap-2.5">
                     <span className="font-sans text-3xl font-bold text-stone-950">
@@ -393,9 +472,13 @@ export const ProductDetailModal: React.FC = () => {
               {!isSold && !isOwnProduct && (selectedProduct.stock > 1) && (
                 <div className="p-3.5 bg-amber-50/70 rounded-xl border border-amber-200/80 flex items-center justify-between font-sans">
                   <div>
-                    <span className="text-xs font-bold text-stone-900 block">Purchase Quantity</span>
+                    <span className="text-xs font-bold text-stone-900 block">
+                      {isInCart ? 'Adjust Quantity in Bag' : 'Purchase Quantity'}
+                    </span>
                     <span className="text-[11px] text-stone-600">
-                      {selectedProduct.stock} Pieces Available
+                      {isInCart 
+                        ? `Currently in bag: ${inCartItem?.quantity || 1} of ${selectedProduct.stock} pieces` 
+                        : `${selectedProduct.stock} Pieces Available`}
                     </span>
                   </div>
                   <div className="flex items-center gap-1.5 bg-white border border-stone-300 rounded-lg p-1 shadow-2xs">
@@ -426,7 +509,7 @@ export const ProductDetailModal: React.FC = () => {
                 </div>
               )}
 
-              {/* Add to Bag Action Button */}
+              {/* Add to Bag / Update Quantity Action Button */}
               <div className="pt-2 font-sans">
                 {isSold ? (
                   <button
@@ -444,6 +527,39 @@ export const ProductDetailModal: React.FC = () => {
                       You are the curator of this piece. Sellers cannot purchase their own listed vault inventory.
                     </p>
                   </div>
+                ) : isInCart ? (
+                  isQtyChanged ? (
+                    <button
+                      id="modal-update-bag-qty-btn"
+                      onClick={() => {
+                        updateQuantity(selectedProduct.id, selectedQuantity);
+                        setIsDetailModalOpen(false);
+                        setIsCartDrawerOpen(true);
+                      }}
+                      className="w-full py-3.5 font-bold rounded-xl text-sm transition-all shadow-md flex items-center justify-center gap-2 bg-stone-950 hover:bg-amber-950 text-amber-50 cursor-pointer"
+                    >
+                      <Check className="w-4 h-4 text-emerald-400" />
+                      <span>
+                        Update Bag Quantity ({selectedQuantity} {selectedQuantity === 1 ? 'unit' : 'units'}) • ₱{(selectedProduct.price * selectedQuantity)?.toLocaleString()}
+                      </span>
+                    </button>
+                  ) : (
+                    <button
+                      id="modal-view-bag-btn"
+                      onClick={() => {
+                        setIsDetailModalOpen(false);
+                        setIsCartDrawerOpen(true);
+                      }}
+                      className="w-full py-3.5 font-bold rounded-xl text-sm transition-all shadow-md flex items-center justify-center gap-2 bg-stone-950 hover:bg-amber-950 text-amber-50 cursor-pointer"
+                    >
+                      <ShoppingBag className="w-4 h-4 text-emerald-400" />
+                      <span>
+                        {selectedProduct.stock > 1 
+                          ? `Already in Bag (${currentInCartQty} ${currentInCartQty === 1 ? 'piece' : 'pieces'}) • View Bag`
+                          : 'Already in Bag • View Bag'}
+                      </span>
+                    </button>
+                  )
                 ) : (
                   <button
                     id="modal-add-to-bag-btn"
@@ -453,24 +569,11 @@ export const ProductDetailModal: React.FC = () => {
                     }}
                     className="w-full py-3.5 font-bold rounded-xl text-sm transition-all shadow-md flex items-center justify-center gap-2 bg-stone-950 hover:bg-amber-950 text-amber-50 cursor-pointer"
                   >
-                    {isInCart ? (
-                      <>
-                        <ShoppingBag className="w-4 h-4 text-amber-300" />
-                        <span>
-                          {selectedProduct.stock > 1 
-                            ? `Add ${selectedQuantity} More to Bag • ₱${(selectedProduct.price * selectedQuantity)?.toLocaleString()}` 
-                            : 'Item Already In Bag (Click to Add More)'}
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <ShoppingBag className="w-4 h-4" />
-                        <span>
-                          Add to Vintage Bag • ₱{(selectedProduct.price * (selectedProduct.stock > 1 ? selectedQuantity : 1))?.toLocaleString()}
-                          {selectedProduct.stock > 1 && selectedQuantity > 1 ? ` (${selectedQuantity} units)` : ''}
-                        </span>
-                      </>
-                    )}
+                    <ShoppingBag className="w-4 h-4" />
+                    <span>
+                      Add to Vintage Bag • ₱{(selectedProduct.price * (selectedProduct.stock > 1 ? selectedQuantity : 1))?.toLocaleString()}
+                      {selectedProduct.stock > 1 && selectedQuantity > 1 ? ` (${selectedQuantity} units)` : ''}
+                    </span>
                   </button>
                 )}
               </div>

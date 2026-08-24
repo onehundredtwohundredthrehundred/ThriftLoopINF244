@@ -50,7 +50,7 @@ interface InventoryContextType {
   isSellerProfileOpen: boolean;
   openSellerProfile: (info: SellerInfo) => void;
   closeSellerProfile: () => void;
-  updateSellerProductsInfo: (sellerId: string, info: { sellerBoutique?: string; sellerName?: string; sellerAvatar?: string }) => Promise<void>;
+  updateSellerProductsInfo: (sellerId: string, info: { sellerBoutique?: string; sellerName?: string; sellerAvatar?: string }, previousBoutiqueName?: string) => Promise<void>;
   isLoadingInventory: boolean;
 }
 
@@ -63,9 +63,10 @@ const defaultFilterState: FilterState = {
   conditions: [],
   eras: [],
   minPrice: 0,
-  maxPrice: 50000,
+  maxPrice: Infinity,
   inStockOnly: false,
   sortBy: 'latest',
+  itemsPerPage: 20,
 };
 
 const InventoryContext = createContext<InventoryContextType | undefined>(undefined);
@@ -77,14 +78,20 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          const map = new Map<string, Product>();
-          parsed.forEach((p: Product) => {
-            if (p && p.id && !map.has(p.id)) {
-              map.set(p.id, p);
-            }
-          });
-          return Array.from(map.values());
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // Filter out generated auto items (tl_gen_prod_*) and update legacy seller info
+          const valid = parsed.filter((p: Product) => p && p.id && !p.id.startsWith('tl_gen_prod_'));
+
+          if (valid.length > 0) {
+            const map = new Map<string, Product>();
+            valid.forEach((p: Product) => {
+              if (!map.has(p.id)) map.set(p.id, p);
+            });
+            INITIAL_PRODUCTS.forEach(p => {
+              if (!map.has(p.id)) map.set(p.id, p);
+            });
+            return Array.from(map.values());
+          }
         }
       } catch (e) {
         return INITIAL_PRODUCTS;
@@ -112,50 +119,6 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setIsSellerProfileOpen(false);
   };
 
-  // Auto-attribute initial items to current active seller's store if logged in as a seller
-  useEffect(() => {
-    if (!currentUser || currentUser.role !== 'seller') return;
-
-    const currentBoutique = currentUser.boutiqueName || `${currentUser.name}'s Boutique`;
-    const defaultSellerIds = new Set(['user_seller_01', 'user_seller_02', 'curator']);
-    
-    // Check if there are default catalog products that can be assigned under current seller's boutique
-    const hasDefaultSeedItems = products.some(p => defaultSellerIds.has(p.sellerId));
-
-    if (hasDefaultSeedItems) {
-      setProducts(prev =>
-        prev.map(p => {
-          if (defaultSellerIds.has(p.sellerId)) {
-            return {
-              ...p,
-              sellerId: currentUser.id,
-              sellerName: currentUser.name,
-              sellerBoutique: currentBoutique,
-              sellerAvatar: currentUser.avatar || p.sellerAvatar
-            };
-          }
-          return p;
-        })
-      );
-
-      // Also persist the updated products to Firestore
-      products.forEach(p => {
-        if (defaultSellerIds.has(p.sellerId)) {
-          const updated = {
-            ...p,
-            sellerId: currentUser.id,
-            sellerName: currentUser.name,
-            sellerBoutique: currentBoutique,
-            sellerAvatar: currentUser.avatar || p.sellerAvatar
-          };
-          updateDoc(doc(db, 'products', p.id), sanitizeFirestoreData(updated)).catch(err => {
-            console.warn('Auto-assign product notice:', err);
-          });
-        }
-      });
-    }
-  }, [currentUser?.id, currentUser?.role, currentUser?.boutiqueName, products.length]);
-
   // Firestore Real-Time Listener and Initial Seeding
   useEffect(() => {
     const productsColRef = collection(db, 'products');
@@ -165,12 +128,16 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         const snap = await getDocs(productsColRef);
         if (snap.empty) {
           console.log('Seeding initial vintage vault collection to Firestore...');
-          const batch = writeBatch(db);
-          INITIAL_PRODUCTS.forEach((item) => {
-            const docRef = doc(db, 'products', item.id);
-            batch.set(docRef, item);
-          });
-          await batch.commit();
+          const chunkSize = 400;
+          for (let i = 0; i < INITIAL_PRODUCTS.length; i += chunkSize) {
+            const chunk = INITIAL_PRODUCTS.slice(i, i + chunkSize);
+            const batch = writeBatch(db);
+            chunk.forEach(item => {
+              const docRef = doc(db, 'products', item.id);
+              batch.set(docRef, sanitizeFirestoreData(item), { merge: true });
+            });
+            await batch.commit();
+          }
         }
       } catch (err) {
         console.warn('Firestore seeding check (using offline cache):', err);
@@ -182,11 +149,18 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const unsubscribe = onSnapshot(productsColRef, (snapshot) => {
       const map = new Map<string, Product>();
       snapshot.forEach((docSnap) => {
-        if (!map.has(docSnap.id)) {
+        // Exclude generated items (tl_gen_prod_*) if any exist in DB
+        if (!docSnap.id.startsWith('tl_gen_prod_') && !map.has(docSnap.id)) {
           map.set(docSnap.id, { id: docSnap.id, ...(docSnap.data() as Omit<Product, 'id'>) });
         }
       });
-      const loaded = Array.from(map.values());
+      // Ensure initial base products are available
+      INITIAL_PRODUCTS.forEach(item => {
+        if (!map.has(item.id)) {
+          map.set(item.id, item);
+        }
+      });
+      const loaded = Array.from(map.values()).filter(p => !p.id.startsWith('tl_gen_prod_'));
       setProducts(loaded);
       localStorage.setItem('thriftloop_products', JSON.stringify(loaded));
       setIsLoadingInventory(false);
@@ -211,9 +185,9 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     // Firestore increment views count
     try {
       const productRef = doc(db, 'products', product.id);
-      updateDoc(productRef, {
+      setDoc(productRef, {
         viewsCount: increment(1)
-      }).catch(err => console.log('View count sync notice:', err));
+      }, { merge: true }).catch(err => console.log('View count sync notice:', err));
     } catch (e) {
       // Non-blocking
     }
@@ -264,13 +238,11 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       }
     }
 
-    // Seller isolation check: allow editing if currentUser matches sellerId OR boutiqueName OR is admin OR curator fallback
+    // Seller isolation check: allow editing if currentUser matches sellerId OR is admin OR unassigned
     if (currentUser && currentUser.role === 'seller') {
-      const isOwner = !existing || currentUser.role === 'admin' || (
+      const isOwner = !existing || (currentUser.role as string) === 'admin' || (
         existing.sellerId === currentUser.id ||
-        (currentUser.boutiqueName && existing.sellerBoutique.toLowerCase() === currentUser.boutiqueName.toLowerCase()) ||
-        existing.sellerId === 'curator' ||
-        !existing.sellerId
+        (!existing.sellerId && currentUser.boutiqueName && existing.sellerBoutique.toLowerCase() === currentUser.boutiqueName.toLowerCase())
       );
       if (existing && !isOwner) {
         console.warn('Security notice: Sellers cannot edit pieces from other boutiques');
@@ -296,14 +268,12 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   };
 
   const deleteProduct = async (id: string) => {
-    // Seller isolation check: allow deletion if currentUser matches sellerId OR boutiqueName OR is admin OR curator fallback
+    // Seller isolation check: allow deletion if currentUser matches sellerId OR is admin OR unassigned
     if (currentUser && currentUser.role === 'seller') {
       const existing = products.find(p => p.id === id);
-      const isOwner = !existing || currentUser.role === 'admin' || (
+      const isOwner = !existing || (currentUser.role as string) === 'admin' || (
         existing.sellerId === currentUser.id ||
-        (currentUser.boutiqueName && existing.sellerBoutique.toLowerCase() === currentUser.boutiqueName.toLowerCase()) ||
-        existing.sellerId === 'curator' ||
-        !existing.sellerId
+        (!existing.sellerId && currentUser.boutiqueName && existing.sellerBoutique.toLowerCase() === currentUser.boutiqueName.toLowerCase())
       );
       if (existing && !isOwner) {
         console.warn('Security notice: Sellers cannot delete pieces from other boutiques');
@@ -433,7 +403,16 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       }
 
       // price
-      if (item.price < filterState.minPrice || item.price > filterState.maxPrice) {
+      if (filterState.minPrice > 0 && item.price < filterState.minPrice) {
+        return false;
+      }
+      if (
+        filterState.maxPrice !== undefined && 
+        filterState.maxPrice !== null && 
+        filterState.maxPrice !== Infinity && 
+        filterState.maxPrice > 0 && 
+        item.price > filterState.maxPrice
+      ) {
         return false;
       }
 
@@ -467,7 +446,8 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const updateSellerProductsInfo = async (
     sellerId: string, 
-    info: { sellerBoutique?: string; sellerName?: string; sellerAvatar?: string }
+    info: { sellerBoutique?: string; sellerName?: string; sellerAvatar?: string },
+    previousBoutiqueName?: string
   ) => {
     if (selectedSellerInfo?.sellerId === sellerId || (currentUser && selectedSellerInfo?.sellerId === currentUser.id)) {
       setSelectedSellerInfo(prev => prev ? {
@@ -477,39 +457,66 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         ...(info.sellerAvatar && { sellerAvatar: info.sellerAvatar }),
       } : null);
     }
-    setProducts(prev =>
-      prev.map(p => {
-        if (p.sellerId === sellerId || (currentUser && p.sellerId === currentUser.id)) {
+
+    const defaultSellerIds = new Set(['user_seller_01', 'user_seller_02', 'curator']);
+    const isMatchingSellerItem = (p: Product) => {
+      if (p.sellerId === sellerId) return true;
+      if (currentUser && p.sellerId === currentUser.id) return true;
+      if (previousBoutiqueName && p.sellerBoutique?.toLowerCase() === previousBoutiqueName.toLowerCase()) return true;
+      if (currentUser?.boutiqueName && p.sellerBoutique?.toLowerCase() === currentUser.boutiqueName.toLowerCase()) return true;
+      if (currentUser?.role === 'seller' && defaultSellerIds.has(p.sellerId)) return true;
+      return false;
+    };
+
+    setProducts(prev => {
+      const next = prev.map(p => {
+        if (isMatchingSellerItem(p)) {
           return {
             ...p,
+            sellerId: currentUser?.id || p.sellerId,
             ...(info.sellerBoutique && { sellerBoutique: info.sellerBoutique }),
             ...(info.sellerName && { sellerName: info.sellerName }),
             ...(info.sellerAvatar && { sellerAvatar: info.sellerAvatar }),
           };
         }
         return p;
-      })
-    );
+      });
+      localStorage.setItem('thriftloop_products', JSON.stringify(next));
+      return next;
+    });
+
+    setSelectedProduct(prev => {
+      if (prev && isMatchingSellerItem(prev)) {
+        return {
+          ...prev,
+          sellerId: currentUser?.id || prev.sellerId,
+          ...(info.sellerBoutique && { sellerBoutique: info.sellerBoutique }),
+          ...(info.sellerName && { sellerName: info.sellerName }),
+          ...(info.sellerAvatar && { sellerAvatar: info.sellerAvatar }),
+        };
+      }
+      return prev;
+    });
 
     try {
-      const batch = writeBatch(db);
-      let count = 0;
-      products.forEach(p => {
-        if (p.sellerId === sellerId || (currentUser && p.sellerId === currentUser.id)) {
+      const itemsToUpdate = products.filter(isMatchingSellerItem);
+      const chunkSize = 400;
+      for (let i = 0; i < itemsToUpdate.length; i += chunkSize) {
+        const chunk = itemsToUpdate.slice(i, i + chunkSize);
+        const batch = writeBatch(db);
+        chunk.forEach(p => {
           const docRef = doc(db, 'products', p.id);
           batch.update(docRef, sanitizeFirestoreData({
+            sellerId: currentUser?.id || p.sellerId,
             ...(info.sellerBoutique && { sellerBoutique: info.sellerBoutique }),
             ...(info.sellerName && { sellerName: info.sellerName }),
             ...(info.sellerAvatar && { sellerAvatar: info.sellerAvatar }),
           }));
-          count++;
-        }
-      });
-      if (count > 0) {
+        });
         await batch.commit();
       }
     } catch (e) {
-      console.warn('Error updating seller products batch:', e);
+      console.warn('Error updating seller products batch in Firestore:', e);
     }
   };
 

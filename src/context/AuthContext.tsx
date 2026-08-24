@@ -25,6 +25,7 @@ interface AuthContextType {
   resetPassword: (email: string) => Promise<{ success: boolean; error?: string }>;
   switchRole: (role: UserRole) => Promise<void>;
   updateUserProfile: (updates: Partial<User>) => Promise<{ success: boolean; error?: string }>;
+  isBoutiqueNameTaken: (boutiqueName: string, excludeUserId?: string) => Promise<boolean>;
   isAuthModalOpen: boolean;
   openAuthModal: (initialTab?: 'login' | 'register', defaultRole?: UserRole) => void;
   closeAuthModal: () => void;
@@ -81,6 +82,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => unsubscribe();
   }, []);
 
+  const isBoutiqueNameTaken = async (boutiqueNameToCheck: string, excludeUserId?: string): Promise<boolean> => {
+    const trimmed = boutiqueNameToCheck.trim().toLowerCase();
+    if (!trimmed) return false;
+
+    try {
+      const usersRef = collection(db, 'users');
+      const querySnap = await getDocs(usersRef);
+      for (const docSnap of querySnap.docs) {
+        if (excludeUserId && docSnap.id === excludeUserId) continue;
+        const data = docSnap.data();
+        if (data && typeof data.boutiqueName === 'string') {
+          if (data.boutiqueName.trim().toLowerCase() === trimmed) {
+            return true;
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Error checking boutique name uniqueness:', err);
+    }
+    return false;
+  };
+
   const loginWithGoogle = async (role: UserRole = 'buyer', boutiqueName?: string): Promise<{ success: boolean; error?: string; cancelled?: boolean }> => {
     try {
       const provider = new GoogleAuthProvider();
@@ -96,6 +119,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } else {
         const namePart = fbUser.displayName || fbUser.email?.split('@')[0] || 'Vintage User';
         const isSeller = role === 'seller';
+
+        if (isSeller && boutiqueName?.trim()) {
+          const chosenBoutique = boutiqueName.trim();
+          if (chosenBoutique.length > 30) {
+            return { success: false, error: 'Boutique name cannot exceed 30 characters.' };
+          }
+          if (chosenBoutique.length < 2) {
+            return { success: false, error: 'Boutique name must be at least 2 characters.' };
+          }
+          const taken = await isBoutiqueNameTaken(chosenBoutique);
+          if (taken) {
+            return {
+              success: false,
+              error: `The boutique name "${chosenBoutique}" is already taken by an existing store. Please choose a unique name.`
+            };
+          }
+        }
+
         const newUser: User = {
           id: fbUser.uid,
           name: namePart,
@@ -108,9 +149,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
 
         if (isSeller) {
-          newUser.boutiqueName = boutiqueName?.trim() || `${namePart}'s Boutique`;
+          newUser.boutiqueName = boutiqueName?.trim() || `${namePart}'s Vault`;
           newUser.boutiqueBio = '';
-          newUser.rating = 5.0;
+          newUser.rating = 0.0;
           newUser.totalSales = 0;
         }
 
@@ -198,6 +239,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     boutiqueName?: string
   ): Promise<{ success: boolean; error?: string }> => {
     try {
+      if (role === 'seller') {
+        const rawBoutique = boutiqueName?.trim() || `${name.trim()}'s Vault`;
+        if (rawBoutique.length > 30) {
+          return { success: false, error: 'Boutique name cannot exceed 30 characters.' };
+        }
+        if (rawBoutique.length < 2) {
+          return { success: false, error: 'Boutique name must be at least 2 characters.' };
+        }
+        const taken = await isBoutiqueNameTaken(rawBoutique);
+        if (taken) {
+          return { 
+            success: false, 
+            error: `The boutique name "${rawBoutique}" is already taken by another registered store. Please choose a unique name.` 
+          };
+        }
+      }
+
       const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), password);
       const fbUid = userCredential.user.uid;
 
@@ -213,9 +271,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
 
       if (role === 'seller') {
-        newUser.boutiqueName = boutiqueName?.trim() || `${name.trim()}'s Boutique`;
+        newUser.boutiqueName = boutiqueName?.trim() || `${name.trim()}'s Vault`;
         newUser.boutiqueBio = '';
-        newUser.rating = 5.0;
+        newUser.rating = 0.0;
         newUser.totalSales = 0;
       }
 
@@ -280,6 +338,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     setCurrentUser(null);
     localStorage.removeItem('thriftloop_user');
+    localStorage.removeItem('thriftloop_cart_guest');
+    localStorage.removeItem('thriftloop_cart');
   };
 
   const deleteAccount = async (): Promise<{ success: boolean; error?: string }> => {
@@ -364,7 +424,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const updatedUser: User = {
         ...currentUser,
         role: newRole,
-        boutiqueName: newRole === 'seller' && !currentUser.boutiqueName ? `${currentUser.name}'s Boutique` : currentUser.boutiqueName
+        boutiqueName: newRole === 'seller' && !currentUser.boutiqueName ? 'Curated Boutique' : currentUser.boutiqueName
       };
       setCurrentUser(updatedUser);
 
@@ -384,6 +444,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const updateUserProfile = async (updates: Partial<User>): Promise<{ success: boolean; error?: string }> => {
     if (!currentUser) return { success: false, error: 'Not authenticated' };
+
+    if (updates.boutiqueName && currentUser.role === 'seller') {
+      const trimmedName = updates.boutiqueName.trim();
+      if (trimmedName.length > 30) {
+        return { success: false, error: 'Boutique name cannot exceed 30 characters.' };
+      }
+      if (trimmedName.length < 2) {
+        return { success: false, error: 'Boutique name must be at least 2 characters.' };
+      }
+      if (trimmedName.toLowerCase() !== (currentUser.boutiqueName || '').toLowerCase()) {
+        const taken = await isBoutiqueNameTaken(trimmedName, currentUser.id);
+        if (taken) {
+          return {
+            success: false,
+            error: `The boutique name "${trimmedName}" is already taken by another registered store. Please choose a unique name.`
+          };
+        }
+      }
+      updates.boutiqueName = trimmedName;
+    }
 
     const updatedUser: User = { ...currentUser, ...updates };
     setCurrentUser(updatedUser);
@@ -421,6 +501,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         resetPassword,
         switchRole,
         updateUserProfile,
+        isBoutiqueNameTaken,
         isAuthModalOpen,
         openAuthModal,
         closeAuthModal,
