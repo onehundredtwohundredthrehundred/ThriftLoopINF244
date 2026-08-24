@@ -48,8 +48,21 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const prevUserIdRef = React.useRef<string | null | undefined>(undefined);
 
+  const isRemoteUpdateRef = React.useRef(false);
+
   const getStorageKey = (userId?: string | null) => {
     return userId ? `thriftloop_cart_user_${userId}` : `thriftloop_cart_guest`;
+  };
+
+  const syncCartToFirestore = async (userId: string, updatedCart: CartItem[]) => {
+    try {
+      await setDoc(doc(db, 'carts', userId), sanitizeFirestoreData({
+        items: updatedCart,
+        updatedAt: new Date().toISOString()
+      }));
+    } catch (err) {
+      console.warn('Error syncing cart to Firestore:', err);
+    }
   };
 
   const [cart, setCart] = useState<CartItem[]>(() => {
@@ -72,53 +85,91 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return [];
   });
 
-  // Isolate and switch cart per user identity
+  // Real-time Firestore sync for logged-in users across tabs / browsers
   useEffect(() => {
     const currentUserId = currentUser?.id ?? null;
-    if (prevUserIdRef.current === undefined) {
-      prevUserIdRef.current = currentUserId;
+
+    if (!currentUserId) {
+      const key = 'thriftloop_cart_guest';
+      const saved = localStorage.getItem(key);
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) setCart(parsed);
+        } catch {}
+      } else {
+        setCart([]);
+      }
       return;
     }
 
-    if (prevUserIdRef.current !== currentUserId) {
-      // If user signed out (currentUserId is null), reset cart to empty and do not leak user items to guest
-      if (!currentUserId) {
-        setCart([]);
-        localStorage.removeItem('thriftloop_cart_guest');
-        setIsCheckoutOpen(false);
+    const cartDocRef = doc(db, 'carts', currentUserId);
+    const unsubscribe = onSnapshot(cartDocRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        if (Array.isArray(data.items)) {
+          isRemoteUpdateRef.current = true;
+          setCart(data.items.map((item: any) => ({
+            ...item,
+            quantity: typeof item.quantity === 'number' && item.quantity > 0 ? item.quantity : 1,
+          })));
+          localStorage.setItem(`thriftloop_cart_user_${currentUserId}`, JSON.stringify(data.items));
+        }
       } else {
-        // Logged in as a specific user - load their isolated saved cart
-        const userKey = getStorageKey(currentUserId);
-        const userSaved = localStorage.getItem(userKey);
-        if (userSaved) {
+        const userKey = `thriftloop_cart_user_${currentUserId}`;
+        const localSaved = localStorage.getItem(userKey);
+        let initialItems: CartItem[] = [];
+        if (localSaved) {
           try {
-            const parsed = JSON.parse(userSaved);
-            if (Array.isArray(parsed)) {
-              setCart(parsed.map((item: any) => ({
-                ...item,
-                quantity: typeof item.quantity === 'number' && item.quantity > 0 ? item.quantity : 1,
-              })));
-            } else {
-              setCart([]);
-            }
-          } catch {
-            setCart([]);
-          }
-        } else {
-          setCart([]);
+            initialItems = JSON.parse(localSaved);
+          } catch {}
+        }
+        if (initialItems.length > 0) {
+          syncCartToFirestore(currentUserId, initialItems);
         }
       }
-      prevUserIdRef.current = currentUserId;
-    }
+    }, (err) => {
+      console.warn('Firestore cart subscription notice:', err);
+    });
+
+    return () => unsubscribe();
   }, [currentUser?.id]);
 
-  // Persist cart to active user's storage key
+  // Persist cart locally & sync to Firestore on user edits
   useEffect(() => {
-    const key = getStorageKey(currentUser?.id ?? null);
+    const currentUserId = currentUser?.id ?? null;
+    const key = getStorageKey(currentUserId);
     localStorage.setItem(key, JSON.stringify(cart));
-    // Clean up any legacy shared cart
     localStorage.removeItem('thriftloop_cart');
+
+    if (isRemoteUpdateRef.current) {
+      isRemoteUpdateRef.current = false;
+      return;
+    }
+
+    if (currentUserId) {
+      syncCartToFirestore(currentUserId, cart);
+    }
   }, [cart, currentUser?.id]);
+
+  // Sync cross-tab localStorage updates in same browser
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      const currentUserId = currentUser?.id ?? null;
+      const activeKey = getStorageKey(currentUserId);
+      if (e.key === activeKey && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (Array.isArray(parsed)) {
+            isRemoteUpdateRef.current = true;
+            setCart(parsed);
+          }
+        } catch {}
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, [currentUser?.id]);
 
   const [orders, setOrders] = useState<Order[]>(() => {
     const saved = localStorage.getItem('thriftloop_orders');
