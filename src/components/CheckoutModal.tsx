@@ -317,7 +317,7 @@ const CheckoutModalInner: React.FC = () => {
       let confirmedPaymentIntentId = paymentIntentData.paymentIntentId;
 
       // Handle Stripe Elements card confirmation if live card element is populated
-      if (selectedPaymentMethod === 'card' && stripe && elements && clientSecret && !clientSecret.includes('_secret_demo')) {
+      if (selectedPaymentMethod === 'card' && stripe && elements && clientSecret && !clientSecret.startsWith('pi_stripe_')) {
         const cardElement = elements.getElement(CardElement);
         if (cardElement) {
           const { error, paymentIntent } = await stripe.confirmCardPayment(clientSecret, {
