@@ -54,7 +54,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (docSnap.exists()) {
             const data = docSnap.data() as User;
             setCurrentUser(data);
-            localStorage.setItem('thriftloop_user', JSON.stringify(data));
           } else {
             // If user doc doesn't exist yet in Firestore, create it
             const email = fbUser.email || 'user@thriftloop.store';
@@ -69,7 +68,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             };
             await setDoc(userDocRef, sanitizeFirestoreData(newUser), { merge: true });
             setCurrentUser(newUser);
-            localStorage.setItem('thriftloop_user', JSON.stringify(newUser));
           }
         } catch (err) {
           console.error('Error fetching Firestore user record:', err);

@@ -87,13 +87,13 @@ export const CartDrawer: React.FC = () => {
               </div>
               <h3 className="font-sans text-lg font-bold text-stone-800">Your bag is empty</h3>
               <p className="text-xs text-stone-500 mt-1 max-w-xs font-sans">
-                Vintage pieces in the Vault are 1-of-1. Explore our archive collection before they are claimed!
+                Vintage pieces in the Vault are 1-of-1. Explore the boutique and see if anything catches your interest!
               </p>
               <button
                 onClick={() => setIsCartDrawerOpen(false)}
                 className="mt-5 px-5 py-2.5 bg-stone-900 hover:bg-amber-900 text-amber-50 text-xs font-semibold rounded-xl transition-colors shadow-xs"
               >
-                Browse Archive Collection
+                Browse Vintage Items
               </button>
             </div>
           ) : (

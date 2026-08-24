@@ -241,7 +241,7 @@ export const OrderTrackerModal: React.FC = () => {
               <p className="text-xs text-stone-600 max-w-sm mx-auto leading-relaxed font-sans">
                 {activeCategory === 'ordered_from_you' 
                   ? 'When customers purchase items from your vintage inventory, their shipping tracking will appear here.'
-                  : 'You have not placed any orders yet. Explore our curated vintage archive to place your first order!'}
+                  : 'You have not placed any orders yet.'}
               </p>
             </div>
           ) : activeTrackingOrder ? (
