@@ -3,7 +3,7 @@ import { CartItem, Product, Order, CourierInfo } from '../types';
 import { INITIAL_ORDERS } from '../data/mockData';
 import { useInventory } from './InventoryContext';
 import { useAuth } from './AuthContext';
-import { db } from '../lib/firebase';
+import { auth, db } from '../lib/firebase';
 import { sanitizeFirestoreData } from '../lib/firestoreUtils';
 import { collection, doc, onSnapshot, setDoc, getDocs, writeBatch } from 'firebase/firestore';
 
@@ -45,15 +45,10 @@ const CartContext = createContext<CartContextType | undefined>(undefined);
 
 export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { markAsSold, decrementStock } = useInventory();
-  const { currentUser } = useAuth();
-
-  const prevUserIdRef = React.useRef<string | null | undefined>(undefined);
+  const { currentUser, isLoadingAuth, openAuthModal } = useAuth();
 
   const isRemoteUpdateRef = React.useRef(false);
-
-  const getStorageKey = (userId?: string | null) => {
-    return userId ? `thriftloop_cart_user_${userId}` : `thriftloop_cart_guest`;
-  };
+  const hasLoadedFromFirestoreRef = React.useRef<Record<string, boolean>>({});
 
   const syncCartToFirestore = async (userId: string, updatedCart: CartItem[]) => {
     try {
@@ -66,21 +61,34 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const [cart, setCart] = useState<CartItem[]>(() => {
-    const key = currentUser?.id ? `thriftloop_cart_user_${currentUser.id}` : `thriftloop_cart_guest`;
-    const saved = localStorage.getItem(key);
-    if (saved) {
+  // Synchronous initial active user detection to avoid missing cached cart on mount
+  const getInitialUserId = () => {
+    if (auth.currentUser?.uid) return auth.currentUser.uid;
+    const cachedUser = localStorage.getItem('thriftloop_user');
+    if (cachedUser) {
       try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          return parsed.map((item: any) => ({
-            ...item,
-            quantity: typeof item.quantity === 'number' && item.quantity > 0 ? item.quantity : 1,
-          }));
-        }
-        return [];
-      } catch (e) {
-        return [];
+        const parsed = JSON.parse(cachedUser);
+        if (parsed?.id) return parsed.id;
+      } catch {}
+    }
+    return null;
+  };
+
+  const [cart, setCart] = useState<CartItem[]>(() => {
+    const initialUserId = getInitialUserId();
+    if (initialUserId) {
+      const primaryKey = `thriftloop_cart_user_${initialUserId}`;
+      const saved = localStorage.getItem(primaryKey);
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed.map((item: any) => ({
+              ...item,
+              quantity: typeof item.quantity === 'number' && item.quantity > 0 ? item.quantity : 1,
+            }));
+          }
+        } catch (e) {}
       }
     }
     return [];
@@ -88,37 +96,48 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Real-time Firestore sync for logged-in users across tabs / browsers
   useEffect(() => {
+    if (isLoadingAuth) return;
+
     const currentUserId = currentUser?.id ?? null;
 
     if (!currentUserId) {
-      const key = 'thriftloop_cart_guest';
-      const saved = localStorage.getItem(key);
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed)) setCart(parsed);
-        } catch {}
-      } else {
-        setCart([]);
-      }
+      // Guest or logged out: cart is strictly empty and isolated
+      setCart([]);
       return;
+    }
+
+    // Immediately load local account cart so there's no UI flash
+    const userKey = `thriftloop_cart_user_${currentUserId}`;
+    const localSaved = localStorage.getItem(userKey);
+    if (localSaved) {
+      try {
+        const parsed = JSON.parse(localSaved);
+        if (Array.isArray(parsed)) {
+          setCart(parsed.map((item: any) => ({
+            ...item,
+            quantity: typeof item.quantity === 'number' && item.quantity > 0 ? item.quantity : 1,
+          })));
+        }
+      } catch {}
+    } else {
+      setCart([]);
     }
 
     const cartDocRef = doc(db, 'carts', currentUserId);
     const unsubscribe = onSnapshot(cartDocRef, (snapshot) => {
+      hasLoadedFromFirestoreRef.current[currentUserId] = true;
       if (snapshot.exists()) {
         const data = snapshot.data();
         if (Array.isArray(data.items)) {
           isRemoteUpdateRef.current = true;
-          setCart(data.items.map((item: any) => ({
+          const items = data.items.map((item: any) => ({
             ...item,
             quantity: typeof item.quantity === 'number' && item.quantity > 0 ? item.quantity : 1,
-          })));
-          localStorage.setItem(`thriftloop_cart_user_${currentUserId}`, JSON.stringify(data.items));
+          }));
+          setCart(items);
+          localStorage.setItem(`thriftloop_cart_user_${currentUserId}`, JSON.stringify(items));
         }
       } else {
-        const userKey = `thriftloop_cart_user_${currentUserId}`;
-        const localSaved = localStorage.getItem(userKey);
         let initialItems: CartItem[] = [];
         if (localSaved) {
           try {
@@ -126,6 +145,8 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
           } catch {}
         }
         if (initialItems.length > 0) {
+          isRemoteUpdateRef.current = true;
+          setCart(initialItems);
           syncCartToFirestore(currentUserId, initialItems);
         }
       }
@@ -134,30 +155,36 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     return () => unsubscribe();
-  }, [currentUser?.id]);
+  }, [currentUser?.id, isLoadingAuth]);
 
   // Persist cart locally & sync to Firestore on user edits
   useEffect(() => {
+    if (isLoadingAuth) return;
+
     const currentUserId = currentUser?.id ?? null;
-    const key = getStorageKey(currentUserId);
+    if (!currentUserId) {
+      return;
+    }
+
+    const key = `thriftloop_cart_user_${currentUserId}`;
     localStorage.setItem(key, JSON.stringify(cart));
-    localStorage.removeItem('thriftloop_cart');
 
     if (isRemoteUpdateRef.current) {
       isRemoteUpdateRef.current = false;
       return;
     }
 
-    if (currentUserId) {
+    if (hasLoadedFromFirestoreRef.current[currentUserId]) {
       syncCartToFirestore(currentUserId, cart);
     }
-  }, [cart, currentUser?.id]);
+  }, [cart, currentUser?.id, isLoadingAuth]);
 
   // Sync cross-tab localStorage updates in same browser
   useEffect(() => {
     const handleStorageChange = (e: StorageEvent) => {
       const currentUserId = currentUser?.id ?? null;
-      const activeKey = getStorageKey(currentUserId);
+      if (!currentUserId) return;
+      const activeKey = `thriftloop_cart_user_${currentUserId}`;
       if (e.key === activeKey && e.newValue) {
         try {
           const parsed = JSON.parse(e.newValue);
@@ -243,6 +270,11 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
 
   const addToCart = (product: Product, quantity: number = 1): { success: boolean; message: string } => {
+    if (!currentUser) {
+      openAuthModal('login');
+      return { success: false, message: 'Please sign in to add items to your bag.' };
+    }
+
     if (product.status === 'sold' || (product.stock !== undefined && product.stock <= 0)) {
       return { success: false, message: 'This piece is out of stock.' };
     }
