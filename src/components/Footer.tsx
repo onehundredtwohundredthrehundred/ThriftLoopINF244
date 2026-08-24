@@ -41,7 +41,7 @@ export const Footer: React.FC<FooterProps> = ({ setCurrentView }) => {
               </span>
             </button>
             <p className="text-xs text-stone-400 max-w-sm leading-relaxed">
-              A curated vintage clothing & apparel boutique platform. Empowering boutique curators with dedicated vault management, standardized 4-tier condition grading, and transparent courier tracking.
+              A curated vintage clothing & apparel boutique platform.
             </p>
           </div>
 
@@ -59,14 +59,16 @@ export const Footer: React.FC<FooterProps> = ({ setCurrentView }) => {
                   Shop 90s & Y2K Archive
                 </button>
               </li>
-              <li>
-                <button 
-                  onClick={() => handleNav('seller_dashboard')} 
-                  className="hover:text-amber-300 transition-colors"
-                >
-                  Boutique Seller Portal
-                </button>
-              </li>
+              {currentUser?.role === 'seller' && (
+                <li>
+                  <button 
+                    onClick={() => handleNav('seller_dashboard')} 
+                    className="hover:text-amber-300 transition-colors"
+                  >
+                    Boutique Seller Portal
+                  </button>
+                </li>
+              )}
             </ul>
           </div>
 
@@ -76,7 +78,7 @@ export const Footer: React.FC<FooterProps> = ({ setCurrentView }) => {
               Authenticity & Standards
             </h4>
             <p className="text-xs text-stone-400 leading-relaxed">
-              Every item listed on ThriftLoop undergoes rigorous inspection by verified vintage boutique partners with precise measurements and transparent character documentation.
+              we are authentic and we have standards
             </p>
           </div>
 
@@ -84,7 +86,7 @@ export const Footer: React.FC<FooterProps> = ({ setCurrentView }) => {
 
         {/* Bottom Bar */}
         <div className="pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-stone-500">
-          <p>© {new Date().getFullYear()} ThriftLoop Boutique. All rights reserved.</p>
+          <p>© {new Date().getFullYear()} ThriftLoop. All rights reserved.</p>
         </div>
 
       </div>

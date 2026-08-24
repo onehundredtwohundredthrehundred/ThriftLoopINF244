@@ -199,13 +199,13 @@ export const ProductCatalog: React.FC = () => {
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 pb-6 border-b border-stone-200">
         <div>
           <span className="text-xs font-sans font-bold uppercase tracking-widest text-amber-900">
-            Boutique Collection
+            Welcome to ThriftLoop
           </span>
           <h1 className="font-sans text-3xl sm:text-4xl font-bold text-stone-950 mt-1">
-            Curated Vintage Items
+            Browse Vintage Items
           </h1>
           <p className="text-xs text-stone-600 font-sans mt-1">
-            Showing {totalItems > 0 ? `${startIndex + 1}–${endIndex} of ${totalItems}` : '0'} verified pieces
+            Showing {totalItems > 0 ? `${startIndex + 1}–${endIndex} of ${totalItems}` : '0'} items
           </p>
         </div>
 
@@ -248,7 +248,8 @@ export const ProductCatalog: React.FC = () => {
               <option value="sold_first">Sold Out on Top</option>
               <option value="price_low">Price: Low to High</option>
               <option value="price_high">Price: High to Low</option>
-              <option value="rarity">Most Viewed / Rare</option>
+              <option value="rarity">Most Viewed</option>
+              <option value="least_viewed">Least Viewed</option>
             </select>
           </div>
         </div>

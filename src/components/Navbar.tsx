@@ -101,7 +101,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setCurrentView }) =
             <form onSubmit={handleSearchSubmit} className="w-full relative">
               <input
                 type="text"
-                placeholder={isSearchFocused ? "Tags are separated by comma..." : "Search vintage vault..."}
+                placeholder={isSearchFocused ? "Tags are separated by comma..." : "Search vintage items..."}
                 value={filterState.searchQuery}
                 onFocus={() => setIsSearchFocused(true)}
                 onBlur={() => setIsSearchFocused(false)}
@@ -123,20 +123,6 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setCurrentView }) =
               title="Search"
             >
               <Search className="w-5 h-5" />
-            </button>
-
-            {/* Live Courier Tracking Quick Access Button */}
-            <button
-              id="nav-tracking-btn"
-              onClick={() => openOrderTracking(orders[0]?.id)}
-              className="hidden sm:inline-flex items-center gap-1.5 text-xs font-medium text-stone-700 hover:text-stone-900 bg-white border border-stone-200 px-3 py-1.5 rounded-full hover:bg-stone-50 transition-all shadow-xs"
-              title="Live Courier Status"
-            >
-              <Truck className="w-3.5 h-3.5 text-amber-700 animate-pulse" />
-              <span>Track Orders</span>
-              {orders.length > 0 && (
-                <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-              )}
             </button>
 
             {/* Shopping Cart Drawer Trigger */}
@@ -272,7 +258,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setCurrentView }) =
                         className="w-full text-left px-4 py-2 text-xs font-medium text-stone-700 hover:bg-stone-50 flex items-center gap-2"
                       >
                         <Truck className="w-4 h-4 text-stone-600" />
-                        <span>{currentUser.role === 'seller' ? 'Track Outbound Shipments' : 'Track My Orders'}</span>
+                        <span>Track Orders</span>
                       </button>
                     </div>
 

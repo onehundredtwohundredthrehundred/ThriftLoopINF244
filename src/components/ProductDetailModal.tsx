@@ -524,7 +524,7 @@ export const ProductDetailModal: React.FC = () => {
                     className="w-full py-3.5 px-4 bg-amber-50/90 border border-amber-200 text-amber-900 rounded-xl text-center shadow-xs"
                   >
                     <p className="text-xs font-medium font-sans">
-                      You are the curator of this piece. Sellers cannot purchase their own listed vault inventory.
+                      You are the curator of this piece. Sellers cannot purchase their own listing.
                     </p>
                   </div>
                 ) : isInCart ? (

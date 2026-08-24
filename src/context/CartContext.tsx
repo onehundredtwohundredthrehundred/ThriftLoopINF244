@@ -332,6 +332,19 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     }
     
+    // Find user's own purchased order first
+    if (currentUser) {
+      const myOrder = orders.find(o => 
+        o.buyerId === currentUser.id || 
+        (!!o.buyerEmail && !!currentUser.email && o.buyerEmail.toLowerCase() === currentUser.email.toLowerCase()) ||
+        (!!o.shippingAddress?.fullName && !!currentUser.name && o.shippingAddress.fullName.toLowerCase() === currentUser.name.toLowerCase())
+      );
+      if (myOrder) {
+        setActiveTrackingOrder(myOrder);
+        return;
+      }
+    }
+
     // If seller is logged in, find orders with their sold items
     if (currentUser?.role === 'seller') {
       const sellerOrder = orders.find(o => 
@@ -344,7 +357,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     }
 
-    // Default to the first order if none specified or found
+    // Default to the first order if available
     if (orders.length > 0) {
       setActiveTrackingOrder(orders[0]);
     }

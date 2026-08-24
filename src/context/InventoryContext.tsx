@@ -439,6 +439,7 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       if (filterState.sortBy === 'price_low') return a.price - b.price;
       if (filterState.sortBy === 'price_high') return b.price - a.price;
       if (filterState.sortBy === 'rarity') return (b.viewsCount || 0) - (a.viewsCount || 0);
+      if (filterState.sortBy === 'least_viewed') return (a.viewsCount || 0) - (b.viewsCount || 0);
       // default: latest
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });

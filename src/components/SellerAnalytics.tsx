@@ -37,9 +37,11 @@ import {
   PieChart, 
   Pie, 
   Cell, 
-  CartesianGrid
+  CartesianGrid,
+  AreaChart,
+  Area
 } from 'recharts';
-import { Product } from '../types';
+import { Product, Order } from '../types';
 import { useInventory } from '../context/InventoryContext';
 import { useBodyScrollLock } from '../lib/useBodyScrollLock';
 
@@ -49,6 +51,7 @@ interface SellerAnalyticsProps {
   soldCount: number;
   totalValuation: number;
   totalViews: number;
+  orders?: Order[];
 }
 
 type DetailModalType = 'active' | 'sold' | 'valuation' | 'views' | null;
@@ -82,19 +85,93 @@ export const SellerAnalytics: React.FC<SellerAnalyticsProps> = ({
   soldCount,
   totalValuation,
   totalViews,
+  orders = [],
 }) => {
   const { openProductDetail } = useInventory();
-  const [activeTab, setActiveTab] = useState<'category' | 'era' | 'traffic'>('category');
+  const [activeTab, setActiveTab] = useState<'earnings' | 'category' | 'era' | 'traffic'>('earnings');
   const [isExpanded, setIsExpanded] = useState<boolean>(true);
   const [activeModal, setActiveModal] = useState<DetailModalType>(null);
 
   useBodyScrollLock(!!activeModal);
 
-  // Modal search & filter state
+  // 30-day Stripe processed earnings dataset
+  const thirtyDaysData = useMemo(() => {
+    const result: { date: string; fullDate: string; earnings: number; count: number; cumulative: number }[] = [];
+    const now = new Date();
+
+    const dailyMap = new Map<string, { earnings: number; count: number }>();
+
+    (orders || []).forEach(order => {
+      // Consider completed orders or credit card processed orders
+      const isPaid = order.paymentStatus === 'paid' || order.paymentMethod === 'credit_card' || (order as any).paymentMethod === 'card';
+      if (isPaid && order.createdAt) {
+        const orderDate = new Date(order.createdAt);
+        const yyyy = orderDate.getFullYear();
+        const mm = String(orderDate.getMonth() + 1).padStart(2, '0');
+        const dd = String(orderDate.getDate()).padStart(2, '0');
+        const dateKey = `${yyyy}-${mm}-${dd}`;
+
+        let orderVal = 0;
+        if (order.items && order.items.length > 0) {
+          orderVal = order.items.reduce((sum, item) => {
+            return sum + (item.priceAtPurchase || item.product?.price || 0) * (item.quantity || 1);
+          }, 0);
+        }
+        if (orderVal === 0 && order.total) {
+          orderVal = order.total;
+        }
+
+        const currentVal = dailyMap.get(dateKey) || { earnings: 0, count: 0 };
+        dailyMap.set(dateKey, {
+          earnings: currentVal.earnings + orderVal,
+          count: currentVal.count + 1,
+        });
+      }
+    });
+
+    let runningTotal = 0;
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(now.getDate() - i);
+
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      const dateKey = `${yyyy}-${mm}-${dd}`;
+
+      const shortLabel = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      const fullLabel = d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+
+      const dayStats = dailyMap.get(dateKey) || { earnings: 0, count: 0 };
+      runningTotal += dayStats.earnings;
+
+      result.push({
+        date: shortLabel,
+        fullDate: fullLabel,
+        earnings: dayStats.earnings,
+        count: dayStats.count,
+        cumulative: runningTotal,
+      });
+    }
+
+    return result;
+  }, [orders]);
+
+  const total30DayEarnings = useMemo(() => {
+    return thirtyDaysData.reduce((sum, d) => sum + d.earnings, 0);
+  }, [thirtyDaysData]);
+
+  const total30DayOrdersCount = useMemo(() => {
+    return thirtyDaysData.reduce((sum, d) => sum + d.count, 0);
+  }, [thirtyDaysData]);
+
+  // Modal search, filter & pagination state
   const [modalSearch, setModalSearch] = useState<string>('');
   const [modalCategoryFilter, setModalCategoryFilter] = useState<string>('All');
   const [modalEraFilter, setModalEraFilter] = useState<string>('All');
-  const [modalSortBy, setModalSortBy] = useState<'price-desc' | 'price-asc' | 'views-desc' | 'name'>('price-desc');
+  const [modalSortBy, setModalSortBy] = useState<'price-desc' | 'price-asc' | 'views-desc' | 'views-asc' | 'name'>('price-desc');
+  const [modalCurrentPage, setModalCurrentPage] = useState<number>(1);
+  const MODAL_ITEMS_PER_PAGE = 20;
 
   // Active & sold product sets
   const activeProducts = useMemo(() => products.filter(p => p.status === 'available'), [products]);
@@ -174,6 +251,17 @@ export const SellerAnalytics: React.FC<SellerAnalyticsProps> = ({
     return [...activeProducts].sort((a, b) => (b.price || 0) - (a.price || 0))[0];
   }, [activeProducts]);
 
+  // Most expensive purchased item
+  const topPurchasedItem = useMemo(() => {
+    if (soldProducts.length > 0) {
+      return [...soldProducts].sort((a, b) => (b.price || 0) - (a.price || 0))[0];
+    }
+    if (activeProducts.length > 0) {
+      return [...activeProducts].sort((a, b) => (b.price || 0) - (a.price || 0))[0];
+    }
+    return null;
+  }, [soldProducts, activeProducts]);
+
   // Lowest valued item
   const lowestValuedItem = useMemo(() => {
     if (activeProducts.length === 0) return null;
@@ -217,12 +305,22 @@ export const SellerAnalytics: React.FC<SellerAnalyticsProps> = ({
       if (modalSortBy === 'price-desc') return (b.price || 0) - (a.price || 0);
       if (modalSortBy === 'price-asc') return (a.price || 0) - (b.price || 0);
       if (modalSortBy === 'views-desc') return (b.viewsCount || 0) - (a.viewsCount || 0);
+      if (modalSortBy === 'views-asc') return (a.viewsCount || 0) - (b.viewsCount || 0);
       if (modalSortBy === 'name') return a.title.localeCompare(b.title);
       return 0;
     });
 
     return list;
   }, [activeModal, activeProducts, soldProducts, products, modalSearch, modalCategoryFilter, modalEraFilter, modalSortBy]);
+
+  // Modal pagination calculation
+  const totalModalPages = Math.max(1, Math.ceil(modalFilteredProducts.length / MODAL_ITEMS_PER_PAGE));
+  const safeModalPage = Math.min(Math.max(1, modalCurrentPage), totalModalPages);
+
+  const paginatedModalProducts = useMemo(() => {
+    const start = (safeModalPage - 1) * MODAL_ITEMS_PER_PAGE;
+    return modalFilteredProducts.slice(start, start + MODAL_ITEMS_PER_PAGE);
+  }, [modalFilteredProducts, safeModalPage]);
 
   // Distinct categories and eras for filter dropdowns in modal
   const distinctCategories = useMemo(() => {
@@ -239,6 +337,7 @@ export const SellerAnalytics: React.FC<SellerAnalyticsProps> = ({
     setModalSearch('');
     setModalCategoryFilter('All');
     setModalEraFilter('All');
+    setModalCurrentPage(1);
     if (type === 'views') {
       setModalSortBy('views-desc');
     } else {
@@ -278,6 +377,33 @@ export const SellerAnalytics: React.FC<SellerAnalyticsProps> = ({
                 <span className="font-bold text-amber-300">₱{data.price.toLocaleString()}</span>
               </div>
             )}
+          </div>
+        </div>
+      );
+    }
+    return null;
+  };
+
+  // Custom earnings chart tooltip
+  const CustomEarningsTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+      const data = payload[0].payload;
+      return (
+        <div className="bg-stone-950/95 text-stone-100 p-3 rounded-xl text-xs shadow-2xl border border-stone-700 backdrop-blur-md font-sans max-w-xs">
+          <p className="font-bold text-amber-200 text-xs mb-1">{data.fullDate || label}</p>
+          <div className="space-y-1 text-[11px] text-stone-300">
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-stone-400">Daily Revenue:</span>
+              <span className="font-bold text-emerald-400">₱{data.earnings.toLocaleString()}</span>
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-stone-400">Orders Processed:</span>
+              <span className="font-bold text-stone-100">{data.count} order(s)</span>
+            </div>
+            <div className="flex items-center justify-between gap-4 pt-1 border-t border-stone-800">
+              <span className="text-stone-400">30-Day Cumulative:</span>
+              <span className="font-bold text-amber-300">₱{data.cumulative.toLocaleString()}</span>
+            </div>
           </div>
         </div>
       );
@@ -480,6 +606,22 @@ export const SellerAnalytics: React.FC<SellerAnalyticsProps> = ({
               <button
                 type="button"
                 onClick={() => {
+                  setActiveTab('earnings');
+                  setIsExpanded(true);
+                }}
+                className={`flex-1 sm:flex-none px-2.5 sm:px-3 py-1.5 rounded-lg font-semibold transition-all flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer text-xs ${
+                  activeTab === 'earnings'
+                    ? 'bg-emerald-900 text-emerald-50 shadow-xs'
+                    : 'text-stone-600 hover:text-stone-900'
+                }`}
+              >
+                <TrendingUpIcon className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span>Monthly Revenue</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
                   setActiveTab('category');
                   setIsExpanded(true);
                 }}
@@ -545,16 +687,80 @@ export const SellerAnalytics: React.FC<SellerAnalyticsProps> = ({
             {/* Chart Area */}
             <div className="lg:col-span-8 min-w-0 bg-stone-50/70 p-3 sm:p-5 rounded-2xl border border-stone-100">
               
+              {/* TAB 0: 30-Day Processed Stripe Earnings Chart */}
+              {activeTab === 'earnings' && (
+                <div>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+                    <div>
+                      <h4 className="font-bold text-stone-900 text-xs sm:text-sm flex items-center gap-2 flex-wrap">
+                        <span>Total Earnings from Processed Stripe Payments (Last 30 Days)</span>
+                      </h4>
+                      <p className="text-[10px] sm:text-[11px] text-stone-500">
+                        Processed card payouts and total earnings accumulated over the last 30 days.
+                      </p>
+                    </div>
+                    <div className="sm:text-right shrink-0">
+                      <div className="text-sm sm:text-base font-black text-emerald-900 font-sans">
+                        ₱{total30DayEarnings.toLocaleString()}
+                      </div>
+                      <p className="text-[10px] text-stone-500 font-sans font-medium">
+                        {total30DayOrdersCount} order(s) processed
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="h-56 sm:h-72 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart
+                        data={thirtyDaysData}
+                        margin={{ top: 10, right: 10, left: -15, bottom: 25 }}
+                      >
+                        <defs>
+                          <linearGradient id="stripeEarningsGradient" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#059669" stopOpacity={0.35} />
+                            <stop offset="95%" stopColor="#059669" stopOpacity={0.0} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e7e5e4" />
+                        <XAxis 
+                          dataKey="date" 
+                          tick={{ fontSize: 10, fill: '#78716c' }}
+                          interval={2}
+                          angle={-20}
+                          textAnchor="end"
+                          height={38}
+                        />
+                        <YAxis 
+                          tick={{ fontSize: 10, fill: '#78716c' }}
+                          tickFormatter={(v) => `₱${v >= 1000 ? `${(v/1000).toFixed(0)}k` : v}`}
+                        />
+                        <Tooltip content={<CustomEarningsTooltip />} />
+                        <Area 
+                          type="monotone" 
+                          dataKey="earnings" 
+                          name="Stripe Earnings" 
+                          stroke="#059669" 
+                          strokeWidth={2.5}
+                          fillOpacity={1} 
+                          fill="url(#stripeEarningsGradient)" 
+                          activeDot={{ r: 6, fill: '#047857', stroke: '#ffffff', strokeWidth: 2 }}
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
+
               {/* TAB 1: By Category Chart */}
               {activeTab === 'category' && (
                 <div>
                   <div className="flex items-center justify-between mb-3">
                     <div>
                       <h4 className="font-bold text-stone-900 text-xs sm:text-sm">
-                        Valuation by Garment Category (₱)
+                        Valuation by Item Category (₱)
                       </h4>
                       <p className="text-[10px] sm:text-[11px] text-stone-500">
-                        Asset worth and stock count across apparel types.
+                        Asset worth and stock count across item types.
                       </p>
                     </div>
                     <button
@@ -619,7 +825,7 @@ export const SellerAnalytics: React.FC<SellerAnalyticsProps> = ({
                   <div className="flex items-center justify-between mb-3">
                     <div>
                       <h4 className="font-bold text-stone-900 text-xs sm:text-sm">
-                        Vintage Era Composition
+                        Vintage Era Item Distribution
                       </h4>
                       <p className="text-[10px] sm:text-[11px] text-stone-500">
                         Item distribution across historic fashion decades.
@@ -695,10 +901,10 @@ export const SellerAnalytics: React.FC<SellerAnalyticsProps> = ({
                   <div className="flex items-center justify-between mb-3">
                     <div>
                       <h4 className="font-bold text-stone-900 text-xs sm:text-sm">
-                        Most Viewed Thrift Pieces
+                        Most Viewed Items
                       </h4>
                       <p className="text-[10px] sm:text-[11px] text-stone-500">
-                        Garments generating the highest buyer interest.
+                        Items generating the highest buyer interest.
                       </p>
                     </div>
                     <button
@@ -751,24 +957,24 @@ export const SellerAnalytics: React.FC<SellerAnalyticsProps> = ({
             {/* Sidebar Highlights */}
             <div className="lg:col-span-4 space-y-3">
               
-              {/* Highlight 1: Top Valued Garment */}
-              {topValuedItem && (
+              {/* Highlight 1: Most Expensive Purchased Item */}
+              {topPurchasedItem && (
                 <div 
-                  onClick={() => openProductDetail(topValuedItem)}
+                  onClick={() => openProductDetail(topPurchasedItem)}
                   className="bg-[#FAF7F2] p-3.5 rounded-xl border border-amber-200/70 hover:border-amber-400 transition-colors cursor-pointer group active:scale-[0.99]"
                 >
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] uppercase font-bold text-amber-900 tracking-wider flex items-center gap-1">
-                      <TagIcon className="w-3 h-3 text-amber-700" /> Most Expensive Item
+                      <TagIcon className="w-3 h-3 text-amber-700" /> Most Expensive Purchased Item
                     </span>
                     <ExternalLinkIcon className="w-3 h-3 text-amber-800 opacity-60 sm:opacity-0 group-hover:opacity-100 transition-opacity" />
                   </div>
                   <p className="font-bold text-stone-900 text-xs mt-1 line-clamp-1 group-hover:text-amber-900 transition-colors">
-                    {topValuedItem.title}
+                    {topPurchasedItem.title}
                   </p>
                   <div className="flex items-center justify-between mt-1.5 text-xs">
-                    <span className="text-stone-500 text-[11px] truncate max-w-[150px]">{topValuedItem.brand} • {topValuedItem.era}</span>
-                    <span className="font-bold text-emerald-800 shrink-0">₱{topValuedItem.price.toLocaleString()}</span>
+                    <span className="text-stone-500 text-[11px] truncate max-w-[150px]">{topPurchasedItem.brand} • {topPurchasedItem.era}</span>
+                    <span className="font-bold text-emerald-800 shrink-0">₱{topPurchasedItem.price.toLocaleString()}</span>
                   </div>
                 </div>
               )}
@@ -1017,14 +1223,20 @@ export const SellerAnalytics: React.FC<SellerAnalyticsProps> = ({
                   <input
                     type="text"
                     value={modalSearch}
-                    onChange={(e) => setModalSearch(e.target.value)}
+                    onChange={(e) => {
+                      setModalSearch(e.target.value);
+                      setModalCurrentPage(1);
+                    }}
                     placeholder="Search by title, brand, era..."
                     className="w-full pl-9 pr-8 py-2 bg-white rounded-xl border border-stone-200 text-xs text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-amber-800/30 focus:border-amber-800 font-sans"
                   />
                   {modalSearch && (
                     <button
                       type="button"
-                      onClick={() => setModalSearch('')}
+                      onClick={() => {
+                        setModalSearch('');
+                        setModalCurrentPage(1);
+                      }}
                       className="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-700"
                     >
                       <XIcon className="w-3.5 h-3.5" />
@@ -1037,7 +1249,10 @@ export const SellerAnalytics: React.FC<SellerAnalyticsProps> = ({
                   {/* Category Filter */}
                   <select
                     value={modalCategoryFilter}
-                    onChange={(e) => setModalCategoryFilter(e.target.value)}
+                    onChange={(e) => {
+                      setModalCategoryFilter(e.target.value);
+                      setModalCurrentPage(1);
+                    }}
                     className="w-full sm:w-auto px-2 py-2 bg-white rounded-xl border border-stone-200 text-[11px] sm:text-xs text-stone-700 font-semibold focus:outline-none focus:ring-2 focus:ring-amber-800/30 font-sans cursor-pointer truncate"
                   >
                     <option value="All">All Categories ({distinctCategories.length})</option>
@@ -1049,7 +1264,10 @@ export const SellerAnalytics: React.FC<SellerAnalyticsProps> = ({
                   {/* Era Filter */}
                   <select
                     value={modalEraFilter}
-                    onChange={(e) => setModalEraFilter(e.target.value)}
+                    onChange={(e) => {
+                      setModalEraFilter(e.target.value);
+                      setModalCurrentPage(1);
+                    }}
                     className="w-full sm:w-auto px-2 py-2 bg-white rounded-xl border border-stone-200 text-[11px] sm:text-xs text-stone-700 font-semibold focus:outline-none focus:ring-2 focus:ring-amber-800/30 font-sans cursor-pointer truncate"
                   >
                     <option value="All">All Eras ({distinctEras.length})</option>
@@ -1061,13 +1279,26 @@ export const SellerAnalytics: React.FC<SellerAnalyticsProps> = ({
                   {/* Sort Filter (spans 2 cols on mobile) */}
                   <select
                     value={modalSortBy}
-                    onChange={(e) => setModalSortBy(e.target.value as any)}
+                    onChange={(e) => {
+                      setModalSortBy(e.target.value as any);
+                      setModalCurrentPage(1);
+                    }}
                     className="col-span-2 sm:col-span-1 w-full sm:w-auto px-2 py-2 bg-white rounded-xl border border-stone-200 text-[11px] sm:text-xs text-stone-700 font-semibold focus:outline-none focus:ring-2 focus:ring-amber-800/30 font-sans cursor-pointer"
                   >
-                    <option value="price-desc">Price: High to Low</option>
-                    <option value="price-asc">Price: Low to High</option>
-                    <option value="views-desc">Most Views</option>
-                    <option value="name">Alphabetical</option>
+                    {activeModal === 'views' ? (
+                      <>
+                        <option value="views-desc">Most Viewed</option>
+                        <option value="views-asc">Least Viewed</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="price-desc">Price: High to Low</option>
+                        <option value="price-asc">Price: Low to High</option>
+                        <option value="views-desc">Most Viewed</option>
+                        <option value="views-asc">Least Viewed</option>
+                        <option value="name">Alphabetical</option>
+                      </>
+                    )}
                   </select>
                 </div>
               </div>
@@ -1083,7 +1314,7 @@ export const SellerAnalytics: React.FC<SellerAnalyticsProps> = ({
                 <>
                   {/* MOBILE VIEW: Touch-Optimized Garment Cards (sm:hidden) */}
                   <div className="space-y-2.5 sm:hidden">
-                    {modalFilteredProducts.map(item => {
+                    {paginatedModalProducts.map(item => {
                       const lineValuation = (item.price || 0) * (item.stock || 1);
                       return (
                         <div 
@@ -1172,7 +1403,7 @@ export const SellerAnalytics: React.FC<SellerAnalyticsProps> = ({
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-stone-100">
-                          {modalFilteredProducts.map(item => {
+                          {paginatedModalProducts.map(item => {
                             const lineValuation = (item.price || 0) * (item.stock || 1);
                             return (
                               <tr key={item.id} className="hover:bg-stone-50/80 transition-colors">
@@ -1295,8 +1526,43 @@ export const SellerAnalytics: React.FC<SellerAnalyticsProps> = ({
             </div>
 
             {/* Modal Footer */}
-            <div className="p-3 sm:px-6 py-2.5 sm:py-3 border-t border-stone-200 bg-[#FCFAF6] flex items-center justify-between text-xs text-stone-500 shrink-0 font-sans">
-              <span className="text-[11px] sm:text-xs">Showing {modalFilteredProducts.length} items</span>
+            <div className="p-3 sm:px-6 py-2.5 sm:py-3 border-t border-stone-200 bg-[#FCFAF6] flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-stone-600 shrink-0 font-sans">
+              <div className="flex items-center gap-2 text-[11px] sm:text-xs">
+                {modalFilteredProducts.length === 0 ? (
+                  <span>Showing 0 items</span>
+                ) : (
+                  <span>
+                    Showing <span className="font-bold text-stone-900">{(safeModalPage - 1) * MODAL_ITEMS_PER_PAGE + 1}–{Math.min(safeModalPage * MODAL_ITEMS_PER_PAGE, modalFilteredProducts.length)}</span> of <span className="font-bold text-stone-900">{modalFilteredProducts.length}</span> items
+                  </span>
+                )}
+              </div>
+
+              {totalModalPages > 1 && (
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    disabled={safeModalPage <= 1}
+                    onClick={() => setModalCurrentPage(prev => Math.max(1, prev - 1))}
+                    className="px-2.5 py-1 bg-white hover:bg-stone-100 disabled:opacity-40 disabled:hover:bg-white border border-stone-200 text-stone-700 font-semibold rounded-lg text-xs transition-colors cursor-pointer"
+                  >
+                    Prev
+                  </button>
+                  
+                  <span className="text-[11px] font-semibold text-stone-600 px-2">
+                    Page {safeModalPage} of {totalModalPages}
+                  </span>
+
+                  <button
+                    type="button"
+                    disabled={safeModalPage >= totalModalPages}
+                    onClick={() => setModalCurrentPage(prev => Math.min(totalModalPages, prev + 1))}
+                    className="px-2.5 py-1 bg-white hover:bg-stone-100 disabled:opacity-40 disabled:hover:bg-white border border-stone-200 text-stone-700 font-semibold rounded-lg text-xs transition-colors cursor-pointer"
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
+
               <button
                 type="button"
                 onClick={() => setActiveModal(null)}

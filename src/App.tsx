@@ -23,7 +23,7 @@ function MainAppContent() {
 
   // Automatically adjust view if non-seller is in seller dashboard
   useEffect(() => {
-    if (!currentUser && currentView === 'seller_dashboard') {
+    if ((!currentUser || currentUser.role !== 'seller') && currentView === 'seller_dashboard') {
       setCurrentView('catalog');
     }
   }, [currentUser, currentView]);

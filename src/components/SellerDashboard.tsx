@@ -241,7 +241,7 @@ export const SellerDashboard: React.FC = () => {
   const [inventorySearchQuery, setInventorySearchQuery] = useState('');
   const [inventoryCategoryFilter, setInventoryCategoryFilter] = useState('All');
   const [inventoryEraFilter, setInventoryEraFilter] = useState('All');
-  const [inventorySortBy, setInventorySortBy] = useState<'default' | 'price-desc' | 'price-asc' | 'views-desc' | 'name'>('default');
+  const [inventorySortBy, setInventorySortBy] = useState<'default' | 'price-desc' | 'price-asc' | 'views-desc' | 'views-asc' | 'name'>('default');
   const [inventoryCurrentPage, setInventoryCurrentPage] = useState(1);
   const INVENTORY_ITEMS_PER_PAGE = 20;
 
@@ -316,6 +316,8 @@ export const SellerDashboard: React.FC = () => {
       result.sort((a, b) => (a.price || 0) - (b.price || 0));
     } else if (inventorySortBy === 'views-desc') {
       result.sort((a, b) => (b.viewsCount || 0) - (a.viewsCount || 0));
+    } else if (inventorySortBy === 'views-asc') {
+      result.sort((a, b) => (a.viewsCount || 0) - (b.viewsCount || 0));
     } else if (inventorySortBy === 'name') {
       result.sort((a, b) => a.title.localeCompare(b.title));
     }
@@ -714,6 +716,20 @@ export const SellerDashboard: React.FC = () => {
     setIsStoreProfileModalOpen(true);
   };
 
+  if (!currentUser || currentUser.role !== 'seller') {
+    return (
+      <div className="max-w-3xl mx-auto px-4 py-20 text-center">
+        <div className="w-14 h-14 bg-amber-100 text-amber-900 rounded-full flex items-center justify-center mx-auto mb-4 font-serif font-bold text-2xl">
+          TL
+        </div>
+        <h2 className="font-serif text-2xl font-bold text-stone-900 mb-2">Access Restricted</h2>
+        <p className="text-sm text-stone-600 max-w-md mx-auto mb-6 leading-relaxed">
+          The Boutique Seller Portal is restricted to registered sellers. Buyers cannot access seller management tools.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
       
@@ -800,6 +816,7 @@ export const SellerDashboard: React.FC = () => {
         soldCount={soldCount || 0}
         totalValuation={totalValuation || 0}
         totalViews={totalViews || 0}
+        orders={sellerOrders}
       />
 
       {/* UPLOAD / EDIT FORM POPUP MODAL */}
@@ -1752,7 +1769,8 @@ export const SellerDashboard: React.FC = () => {
               <option value="default">Sort: Default</option>
               <option value="price-desc">Price: High to Low</option>
               <option value="price-asc">Price: Low to High</option>
-              <option value="views-desc">Most Views</option>
+              <option value="views-desc">Most Viewed</option>
+              <option value="views-asc">Least Viewed</option>
               <option value="name">Alphabetical</option>
             </select>
           </div>
@@ -1882,58 +1900,60 @@ export const SellerDashboard: React.FC = () => {
                       </div>
 
                       {/* Stock inline editor */}
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const currentStock = item.stock !== undefined ? item.stock : (item.status === 'sold' ? 0 : 1);
-                            const newStock = Math.max(0, currentStock - 1);
-                            updateProduct(item.id, { 
-                              stock: newStock,
-                              status: newStock === 0 ? 'sold' : 'available'
-                            });
-                          }}
-                          disabled={item.stock === 0 || item.status === 'sold'}
-                          className="w-6 h-6 rounded bg-stone-100 hover:bg-stone-200 text-stone-700 flex items-center justify-center text-xs font-bold disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                        >
-                          <Minus className="w-3 h-3" />
-                        </button>
-                        <input
-                          type="number"
-                          min={0}
-                          value={item.stock !== undefined ? item.stock : (item.status === 'sold' ? 0 : 1)}
-                          onChange={(e) => {
-                            const val = parseInt(e.target.value, 10);
-                            const newStock = isNaN(val) ? 0 : Math.max(0, val);
-                            updateProduct(item.id, { 
-                              stock: newStock,
-                              status: newStock === 0 ? 'sold' : 'available'
-                            });
-                          }}
-                          className="w-10 px-1 py-0.5 text-center font-bold text-xs border border-stone-300 rounded bg-stone-50 text-stone-950"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const currentStock = item.stock !== undefined ? item.stock : (item.status === 'sold' ? 0 : 1);
-                            const newStock = currentStock + 1;
-                            updateProduct(item.id, { 
-                              stock: newStock,
-                              status: 'available'
-                            });
-                          }}
-                          className="w-6 h-6 rounded bg-stone-100 hover:bg-stone-200 text-stone-700 flex items-center justify-center text-xs font-bold transition-colors"
-                        >
-                          <Plus className="w-3 h-3" />
-                        </button>
+                      <div className="flex flex-col items-end gap-1">
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const currentStock = item.stock !== undefined ? item.stock : (item.status === 'sold' ? 0 : 1);
+                              const newStock = Math.max(0, currentStock - 1);
+                              updateProduct(item.id, { 
+                                stock: newStock,
+                                status: newStock === 0 ? 'sold' : 'available'
+                              });
+                            }}
+                            disabled={item.stock === 0 || item.status === 'sold'}
+                            className="w-6 h-6 rounded bg-stone-100 hover:bg-stone-200 text-stone-700 flex items-center justify-center text-xs font-bold disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                          >
+                            <Minus className="w-3 h-3" />
+                          </button>
+                          <input
+                            type="number"
+                            min={0}
+                            value={item.stock !== undefined ? item.stock : (item.status === 'sold' ? 0 : 1)}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value, 10);
+                              const newStock = isNaN(val) ? 0 : Math.max(0, val);
+                              updateProduct(item.id, { 
+                                stock: newStock,
+                                status: newStock === 0 ? 'sold' : 'available'
+                              });
+                            }}
+                            className="w-10 px-1 py-0.5 text-center font-bold text-xs border border-stone-300 rounded bg-stone-50 text-stone-950"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const currentStock = item.stock !== undefined ? item.stock : (item.status === 'sold' ? 0 : 1);
+                              const newStock = currentStock + 1;
+                              updateProduct(item.id, { 
+                                stock: newStock,
+                                status: 'available'
+                              });
+                            }}
+                            className="w-6 h-6 rounded bg-stone-100 hover:bg-stone-200 text-stone-700 flex items-center justify-center text-xs font-bold transition-colors"
+                          >
+                            <Plus className="w-3 h-3" />
+                          </button>
+                        </div>
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                           item.status === 'available' && (item.stock || 0) > 0
                             ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
                             : 'bg-rose-100 text-rose-900 border border-rose-300'
                         }`}>
                           {item.status === 'available' && (item.stock || 0) > 0
-                            ? `${item.stock || 1} left`
-                            : 'Sold Out'}
+                            ? ((item.stock || 0) > 1 ? `${item.stock} Pieces Available` : '1 Piece Available')
+                            : '✕ Sold Out'}
                         </span>
                       </div>
                     </div>
@@ -2073,7 +2093,7 @@ export const SellerDashboard: React.FC = () => {
                           </div>
                         </td>
                         <td className="p-4 font-sans">
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-col items-start gap-1">
                             <div className="flex items-center gap-1 shrink-0">
                               <button
                                 type="button"
@@ -2126,7 +2146,7 @@ export const SellerDashboard: React.FC = () => {
                             </div>
 
                             <div
-                              className={`px-2 py-1 rounded text-[10px] font-sans font-bold leading-tight shrink-0 select-none ${
+                              className={`px-2 py-0.5 rounded text-[10px] font-sans font-bold leading-tight shrink-0 select-none ${
                                 item.status === 'available' && (item.stock || 0) > 0
                                   ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
                                   : 'bg-rose-100 text-rose-900 border border-rose-300'
