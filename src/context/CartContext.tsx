@@ -48,7 +48,8 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const { currentUser, isLoadingAuth, openAuthModal } = useAuth();
 
   const isRemoteUpdateRef = React.useRef(false);
-  const hasLoadedFromFirestoreRef = React.useRef<Record<string, boolean>>({});
+    const hasLoadedFromFirestoreRef = React.useRef<Record<string, boolean>>({});
+    const prevUserIdRef = React.useRef<string | null>(null);
 
   const syncCartToFirestore = async (userId: string, updatedCart: CartItem[]) => {
     try {
@@ -98,7 +99,15 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     if (isLoadingAuth) return;
 
-    const currentUserId = currentUser?.id ?? null;
+        const currentUserId = currentUser?.id ?? null;
+
+    // Detect user change: clear cart state immediately to prevent stale data leaks.
+    const prevUserId = prevUserIdRef.current;
+    prevUserIdRef.current = currentUserId;
+
+    if (prevUserId !== currentUserId) {
+      setCart([]);
+    }
 
     if (!currentUserId) {
       // Guest or logged out: cart is strictly empty and isolated
@@ -125,31 +134,52 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const cartDocRef = doc(db, 'carts', currentUserId);
     const unsubscribe = onSnapshot(cartDocRef, (snapshot) => {
-      hasLoadedFromFirestoreRef.current[currentUserId] = true;
-      if (snapshot.exists()) {
-        const data = snapshot.data();
-        if (Array.isArray(data.items)) {
-          isRemoteUpdateRef.current = true;
-          const items = data.items.map((item: any) => ({
-            ...item,
-            quantity: typeof item.quantity === 'number' && item.quantity > 0 ? item.quantity : 1,
-          }));
-          setCart(items);
-          localStorage.setItem(`thriftloop_cart_user_${currentUserId}`, JSON.stringify(items));
-        }
-      } else {
-        let initialItems: CartItem[] = [];
-        if (localSaved) {
-          try {
-            initialItems = JSON.parse(localSaved);
-          } catch {}
-        }
-        if (initialItems.length > 0) {
-          isRemoteUpdateRef.current = true;
-          setCart(initialItems);
-          syncCartToFirestore(currentUserId, initialItems);
-        }
-      }
+            // Ignore stale snapshots if the user has switched accounts
+            if (prevUserIdRef.current !== currentUserId) return;
+
+            hasLoadedFromFirestoreRef.current[currentUserId] = true;
+
+            // CRITICAL: Do NOT let an empty Firestore snapshot wipe the local cart.
+            // If Firestore has no items but local storage does, prefer local and push to Firestore.
+            const hasLocalItems = localSaved && Array.isArray(JSON.parse(localSaved || '[]')) && JSON.parse(localSaved || '[]').length > 0;
+
+            if (snapshot.exists()) {
+              const data = snapshot.data();
+              if (Array.isArray(data.items)) {
+                const firestoreHasItems = data.items.length > 0;
+
+                // Only overwrite local cart from Firestore if Firestore actually has items.
+                // If Firestore is empty, keep the local cart (it's likely older and has data).
+                if (firestoreHasItems) {
+                  isRemoteUpdateRef.current = true;
+                  const items = data.items.map((item: any) => ({
+                    ...item,
+                    quantity: typeof item.quantity === 'number' && item.quantity > 0 ? item.quantity : 1,
+                  }));
+                  setCart(items);
+                  localStorage.setItem(`thriftloop_cart_user_${currentUserId}`, JSON.stringify(items));
+                } else if (hasLocalItems) {
+                  // Firestore is empty but local has items — push local to Firestore
+                  const localItems = JSON.parse(localSaved);
+                  isRemoteUpdateRef.current = true;
+                  setCart(localItems);
+                  syncCartToFirestore(currentUserId, localItems);
+                }
+              }
+            } else {
+              // Firestore doc doesn't exist yet
+              let initialItems: CartItem[] = [];
+              if (localSaved) {
+                try {
+                  initialItems = JSON.parse(localSaved);
+                } catch {}
+              }
+              if (initialItems.length > 0) {
+                isRemoteUpdateRef.current = true;
+                setCart(initialItems);
+                syncCartToFirestore(currentUserId, initialItems);
+              }
+            }
     }, (err) => {
       console.warn('Firestore cart subscription notice:', err);
     });
@@ -157,12 +187,19 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => unsubscribe();
   }, [currentUser?.id, isLoadingAuth]);
 
-  // Persist cart locally & sync to Firestore on user edits
+    // Persist cart locally & sync to Firestore on user edits
   useEffect(() => {
     if (isLoadingAuth) return;
 
     const currentUserId = currentUser?.id ?? null;
     if (!currentUserId) {
+      return;
+    }
+
+    // CRITICAL: Only persist cart if the cart state belongs to the current user.
+    // Without this guard, Account A's items could be written to Account B's storage
+    // during the account-switching render cycle.
+    if (prevUserIdRef.current !== currentUserId) {
       return;
     }
 
