@@ -35,8 +35,9 @@ interface CartContextType {
     street: string;
     city: string;
     province: string;
-    zipCode: string;
-    paymentMethod: 'credit_card' | 'gcash' | 'maya' | 'paypal' | 'cod';
+        zipCode: string;
+    paymentMethod: 'credit_card' | 'gcash' | 'maya' | 'paypal' | 'cod' | 'stripe_card';
+    paymentIntentId?: string;
   }) => Promise<Order>;
 }
 
@@ -373,8 +374,9 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     street: string;
     city: string;
     province: string;
-    zipCode: string;
-    paymentMethod: 'credit_card' | 'gcash' | 'maya' | 'paypal' | 'cod';
+        zipCode: string;
+    paymentMethod: 'credit_card' | 'gcash' | 'maya' | 'paypal' | 'cod' | 'stripe_card';
+    paymentIntentId?: string;
   }): Promise<Order> => {
     // Generate unique courier tracking with realistic timeline
     const trackingNum = `TL-LX-${Math.floor(1000000 + Math.random() * 9000000)}-PH`;
