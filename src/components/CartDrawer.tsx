@@ -20,6 +20,7 @@ export const CartDrawer: React.FC = () => {
     isCartDrawerOpen, 
     setIsCartDrawerOpen, 
     removeFromCart, 
+    clearCart,
     updateQuantity,
     subtotal, 
     shippingFee, 
@@ -70,12 +71,24 @@ export const CartDrawer: React.FC = () => {
               {cart.length} {cart.length === 1 ? 'piece' : 'pieces'}
             </span>
           </div>
-          <button
-            onClick={() => setIsCartDrawerOpen(false)}
-            className="text-stone-400 hover:text-white p-1 rounded-lg hover:bg-stone-800 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            {cart.length > 0 && (
+              <button
+                id="clear-vintage-bag-btn"
+                onClick={clearCart}
+                className="text-xs text-stone-400 hover:text-rose-300 transition-colors px-2 py-1 rounded hover:bg-stone-800/80 cursor-pointer"
+                title="Remove all items from bag"
+              >
+                Clear all
+              </button>
+            )}
+            <button
+              onClick={() => setIsCartDrawerOpen(false)}
+              className="text-stone-400 hover:text-white p-1 rounded-lg hover:bg-stone-800 transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Cart Items List */}

@@ -134,52 +134,42 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const cartDocRef = doc(db, 'carts', currentUserId);
     const unsubscribe = onSnapshot(cartDocRef, (snapshot) => {
-            // Ignore stale snapshots if the user has switched accounts
-            if (prevUserIdRef.current !== currentUserId) return;
+      // Ignore stale snapshots if the user has switched accounts
+      if (prevUserIdRef.current !== currentUserId) return;
 
-            hasLoadedFromFirestoreRef.current[currentUserId] = true;
+      hasLoadedFromFirestoreRef.current[currentUserId] = true;
 
-            // CRITICAL: Do NOT let an empty Firestore snapshot wipe the local cart.
-            // If Firestore has no items but local storage does, prefer local and push to Firestore.
-            const hasLocalItems = localSaved && Array.isArray(JSON.parse(localSaved || '[]')) && JSON.parse(localSaved || '[]').length > 0;
+      // Ignore local optimistic writes that are already updated in state
+      if (snapshot.metadata.hasPendingWrites) {
+        return;
+      }
 
-            if (snapshot.exists()) {
-              const data = snapshot.data();
-              if (Array.isArray(data.items)) {
-                const firestoreHasItems = data.items.length > 0;
-
-                // Only overwrite local cart from Firestore if Firestore actually has items.
-                // If Firestore is empty, keep the local cart (it's likely older and has data).
-                if (firestoreHasItems) {
-                  isRemoteUpdateRef.current = true;
-                  const items = data.items.map((item: any) => ({
-                    ...item,
-                    quantity: typeof item.quantity === 'number' && item.quantity > 0 ? item.quantity : 1,
-                  }));
-                  setCart(items);
-                  localStorage.setItem(`thriftloop_cart_user_${currentUserId}`, JSON.stringify(items));
-                } else if (hasLocalItems) {
-                  // Firestore is empty but local has items — push local to Firestore
-                  const localItems = JSON.parse(localSaved);
-                  isRemoteUpdateRef.current = true;
-                  setCart(localItems);
-                  syncCartToFirestore(currentUserId, localItems);
-                }
-              }
-            } else {
-              // Firestore doc doesn't exist yet
-              let initialItems: CartItem[] = [];
-              if (localSaved) {
-                try {
-                  initialItems = JSON.parse(localSaved);
-                } catch {}
-              }
-              if (initialItems.length > 0) {
-                isRemoteUpdateRef.current = true;
-                setCart(initialItems);
-                syncCartToFirestore(currentUserId, initialItems);
-              }
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        if (Array.isArray(data.items)) {
+          isRemoteUpdateRef.current = true;
+          const items = data.items.map((item: any) => ({
+            ...item,
+            quantity: typeof item.quantity === 'number' && item.quantity > 0 ? item.quantity : 1,
+          }));
+          setCart(items);
+          localStorage.setItem(`thriftloop_cart_user_${currentUserId}`, JSON.stringify(items));
+        }
+      } else {
+        // Firestore doc doesn't exist yet: check fresh localStorage
+        const userKey = `thriftloop_cart_user_${currentUserId}`;
+        const currentSaved = localStorage.getItem(userKey);
+        let initialItems: CartItem[] = [];
+        if (currentSaved) {
+          try {
+            const parsed = JSON.parse(currentSaved);
+            if (Array.isArray(parsed)) {
+              initialItems = parsed;
             }
+          } catch {}
+        }
+        syncCartToFirestore(currentUserId, initialItems);
+      }
     }, (err) => {
       console.warn('Firestore cart subscription notice:', err);
     });
@@ -366,13 +356,25 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const removeFromCart = (productId: string) => {
-    setCart(prev => prev.filter(item => item.product.id !== productId));
+    setCart(prev => {
+      const nextCart = prev.filter(item => item.product.id !== productId);
+      const currentUserId = currentUser?.id ?? null;
+      if (currentUserId) {
+        localStorage.setItem(`thriftloop_cart_user_${currentUserId}`, JSON.stringify(nextCart));
+      }
+      return nextCart;
+    });
   };
 
   const clearCart = () => {
     setCart([]);
     setDiscount(0);
     setDiscountCode('');
+    const currentUserId = currentUser?.id ?? null;
+    if (currentUserId) {
+      localStorage.setItem(`thriftloop_cart_user_${currentUserId}`, JSON.stringify([]));
+      syncCartToFirestore(currentUserId, []);
+    }
   };
 
   const applyDiscountCode = (): { success: boolean; message: string } => {
@@ -443,7 +445,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     street: string;
     city: string;
     province: string;
-        zipCode: string;
+    zipCode: string;
     paymentMethod: 'credit_card' | 'gcash' | 'maya' | 'paypal' | 'cod' | 'stripe_card';
     paymentIntentId?: string;
   }): Promise<Order> => {
