@@ -48,17 +48,21 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const { currentUser, isLoadingAuth, openAuthModal } = useAuth();
 
   const isRemoteUpdateRef = React.useRef(false);
-    const hasLoadedFromFirestoreRef = React.useRef<Record<string, boolean>>({});
-    const prevUserIdRef = React.useRef<string | null>(null);
+  const hasLoadedFromFirestoreRef = React.useRef<Record<string, boolean>>({});
+  const prevUserIdRef = React.useRef<string | null>(null);
+  const lastLocalUpdateRef = React.useRef<number>(0);
 
   const syncCartToFirestore = async (userId: string, updatedCart: CartItem[]) => {
     try {
+      const timestamp = lastLocalUpdateRef.current || Date.now();
       await setDoc(doc(db, 'carts', userId), sanitizeFirestoreData({
+        userId,
         items: updatedCart,
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date(timestamp).toISOString(),
+        timestampMs: timestamp
       }));
     } catch (err) {
-      console.warn('Error syncing cart to Firestore:', err);
+      console.error('Error syncing cart to Firestore:', err);
     }
   };
 
@@ -146,6 +150,12 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (snapshot.exists()) {
         const data = snapshot.data();
+
+        // If snapshot is older than our latest local user action (e.g. Clear all), ignore it!
+        if (typeof data.timestampMs === 'number' && data.timestampMs < lastLocalUpdateRef.current) {
+          return;
+        }
+
         if (Array.isArray(data.items)) {
           isRemoteUpdateRef.current = true;
           const items = data.items.map((item: any) => ({
@@ -316,6 +326,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const existingIndex = cart.findIndex(item => item.product.id === product.id);
 
+    lastLocalUpdateRef.current = Date.now();
     if (existingIndex > -1) {
       const existingItem = cart[existingIndex];
       if (availableStock <= 1) {
@@ -338,6 +349,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const updateQuantity = (productId: string, newQuantity: number) => {
+    lastLocalUpdateRef.current = Date.now();
     if (newQuantity <= 0) {
       removeFromCart(productId);
       return;
@@ -356,6 +368,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const removeFromCart = (productId: string) => {
+    lastLocalUpdateRef.current = Date.now();
     setCart(prev => {
       const nextCart = prev.filter(item => item.product.id !== productId);
       const currentUserId = currentUser?.id ?? null;
@@ -367,6 +380,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const clearCart = () => {
+    lastLocalUpdateRef.current = Date.now();
     setCart([]);
     setDiscount(0);
     setDiscountCode('');

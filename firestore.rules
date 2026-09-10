@@ -16,6 +16,11 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    // Carts collection
+    match /carts/{cartId} {
+      allow read, write: if true;
+    }
+
     // Reviews collection
     match /reviews/{reviewId} {
       allow read, write: if true;

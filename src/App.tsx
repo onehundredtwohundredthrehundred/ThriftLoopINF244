@@ -45,7 +45,6 @@ function MainAppContent() {
       </main>
 
       {/* Shared Modals & Drawers */}
-      <AuthModal />
       <ProductDetailModal />
       <CartDrawer />
       <CheckoutModal />
@@ -53,6 +52,7 @@ function MainAppContent() {
       <PrintableReportModal />
       <SellerProfileModal setCurrentView={setCurrentView} />
       <AccountSettingsModal />
+      <AuthModal />
 
       {/* Footer */}
       <Footer setCurrentView={setCurrentView} />
