@@ -251,10 +251,16 @@ export const OrderTrackerModal: React.FC = () => {
               <div className="bg-white p-4 sm:p-5 rounded-xl sm:rounded-2xl border border-stone-200 shadow-xs space-y-3 sm:space-y-4 font-sans">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 border-b border-stone-100">
                   <div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
                         {activeTrackingOrder.courier?.provider || 'LoopExpress Courier'}
                       </span>
+                      {activeTrackingOrder.paymentIntentId && (
+                        <span className="text-[10px] font-mono font-medium text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 flex items-center gap-1" title={activeTrackingOrder.paymentIntentId}>
+                          <Check className="w-3 h-3 text-emerald-600" />
+                          Stripe: {activeTrackingOrder.paymentIntentId.startsWith('pi_') ? activeTrackingOrder.paymentIntentId.slice(0, 18) + '...' : activeTrackingOrder.paymentIntentId}
+                        </span>
+                      )}
                     </div>
                     <h3 className="font-sans text-lg sm:text-xl font-bold text-stone-950 mt-1">
                       Order #{activeTrackingOrder.orderNumber}

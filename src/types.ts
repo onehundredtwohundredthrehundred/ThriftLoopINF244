@@ -115,6 +115,8 @@ export interface Order {
   discount: number;
   total: number;
   paymentMethod: 'credit_card' | 'gcash' | 'maya' | 'paypal' | 'cod' | 'stripe_card';
+  paymentIntentId?: string;
+  stripeChargeId?: string;
   paymentStatus: 'paid' | 'pending' | 'processing';
   orderStatus: 'order_placed' | 'item_inspected' | 'handed_to_courier' | 'in_transit' | 'out_for_delivery' | 'delivered';
   courier: CourierInfo;

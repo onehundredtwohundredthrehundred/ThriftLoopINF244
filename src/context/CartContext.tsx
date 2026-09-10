@@ -536,6 +536,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
       discount,
       total,
       paymentMethod: checkoutData.paymentMethod,
+      paymentIntentId: checkoutData.paymentIntentId,
       paymentStatus: 'paid',
       orderStatus: 'order_placed',
       courier: courierDetails,

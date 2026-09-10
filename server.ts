@@ -22,6 +22,15 @@ async function startServer() {
     res.json({ status: "ok", gateway: "Stripe", timestamp: new Date().toISOString() });
   });
 
+  // Stripe Configuration endpoint for client publishable key
+  app.get("/api/stripe/config", (_req, res) => {
+    const publishableKey = process.env.VITE_STRIPE_PUBLISHABLE_KEY || "pk_test_51U7SNwKC304NxFdv6swsOvK3VLgtjQziYUiWYqx8R4MGNgnIG4RGKbMm8nhZFP9fOnfBwtOsLzIXAoAal6Zcv9Ow00Uhz8ixDC";
+    res.json({
+      publishableKey,
+      isConfigured: !!process.env.STRIPE_SECRET_KEY
+    });
+  });
+
   // Stripe PaymentIntent API Endpoint (Secure Client Secret Generation)
   app.post("/api/stripe/create-payment-intent", async (req, res) => {
     try {

@@ -126,7 +126,7 @@ export async function createStripePaymentIntent(
 export async function confirmStripePaymentIntent(
   paymentIntentId: string,
   paymentMethodId?: string
-): Promise<{ success: boolean; status: string; paymentIntentId: string; intent?: any; error?: string }> {
+): Promise<{ success: boolean; status: string; paymentIntentId: string; chargeId?: string; intent?: any; error?: string }> {
   const stripe = getStripe();
 
   if (stripe && paymentIntentId && !paymentIntentId.startsWith("pi_stripe_")) {
@@ -136,10 +136,15 @@ export async function confirmStripePaymentIntent(
 
       // 2. If already succeeded, return immediately
       if (existingIntent.status === "succeeded") {
+        const chargeId = typeof existingIntent.latest_charge === "string" 
+          ? existingIntent.latest_charge 
+          : (existingIntent.latest_charge as any)?.id;
+
         return {
           success: true,
           status: existingIntent.status,
           paymentIntentId: existingIntent.id,
+          chargeId,
           intent: existingIntent,
         };
       }
@@ -149,29 +154,40 @@ export async function confirmStripePaymentIntent(
         const pmToUse = paymentMethodId || "pm_card_visa";
         const confirmedIntent = await stripe.paymentIntents.confirm(paymentIntentId, {
           payment_method: pmToUse,
+          return_url: "https://thriftloop.store/checkout/success",
         });
 
+        const chargeId = typeof confirmedIntent.latest_charge === "string" 
+          ? confirmedIntent.latest_charge 
+          : (confirmedIntent.latest_charge as any)?.id;
+
         return {
-          success: true,
+          success: confirmedIntent.status === "succeeded",
           status: confirmedIntent.status,
           paymentIntentId: confirmedIntent.id,
+          chargeId,
           intent: confirmedIntent,
         };
       }
 
+      const chargeId = typeof existingIntent.latest_charge === "string" 
+        ? existingIntent.latest_charge 
+        : (existingIntent.latest_charge as any)?.id;
+
       return {
-        success: true,
+        success: (existingIntent.status as string) === "succeeded",
         status: existingIntent.status,
         paymentIntentId: existingIntent.id,
+        chargeId,
         intent: existingIntent,
       };
     } catch (err: any) {
-      console.warn("Stripe confirmPaymentIntent warning (handled gracefully):", err.message);
+      console.error("Stripe confirmPaymentIntent error:", err.message);
       return {
-        success: true,
-        status: "succeeded",
+        success: false,
+        status: "failed",
         paymentIntentId,
-        error: err.message,
+        error: err.message || "Failed to confirm payment with Stripe",
       };
     }
   }
