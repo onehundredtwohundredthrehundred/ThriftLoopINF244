@@ -4,6 +4,7 @@ import { INITIAL_PRODUCTS } from '../data/mockData';
 import { useAuth } from './AuthContext';
 import { db } from '../lib/firebase';
 import { sanitizeFirestoreData } from '../lib/firestoreUtils';
+import { safeLocalStorageGet, cacheProductsSafely } from '../lib/storage';
 import { 
   collection, 
   doc, 
@@ -74,7 +75,7 @@ const InventoryContext = createContext<InventoryContextType | undefined>(undefin
 export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { currentUser } = useAuth();
   const [products, setProducts] = useState<Product[]>(() => {
-    const saved = localStorage.getItem('thriftloop_products');
+    const saved = safeLocalStorageGet('thriftloop_products');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
@@ -162,7 +163,7 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       });
       const loaded = Array.from(map.values()).filter(p => !p.id.startsWith('tl_gen_prod_'));
       setProducts(loaded);
-      localStorage.setItem('thriftloop_products', JSON.stringify(loaded));
+      cacheProductsSafely(loaded);
       setIsLoadingInventory(false);
     }, (error) => {
       console.warn('Firestore products listener fallback to local state:', error);
@@ -253,7 +254,7 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     // Optimistic update + localStorage sync
     setProducts(prev => {
       const next = prev.map(p => (p.id === id ? { ...p, ...finalUpdates } : p));
-      localStorage.setItem('thriftloop_products', JSON.stringify(next));
+      cacheProductsSafely(next);
       return next;
     });
     if (selectedProduct && selectedProduct.id === id) {
@@ -284,7 +285,7 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     // Optimistic deletion + localStorage sync
     setProducts(prev => {
       const next = prev.filter(p => p.id !== id);
-      localStorage.setItem('thriftloop_products', JSON.stringify(next));
+      cacheProductsSafely(next);
       return next;
     });
 
@@ -482,7 +483,7 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         }
         return p;
       });
-      localStorage.setItem('thriftloop_products', JSON.stringify(next));
+      cacheProductsSafely(next);
       return next;
     });
 

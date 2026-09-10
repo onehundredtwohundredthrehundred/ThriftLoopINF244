@@ -5,6 +5,7 @@ import { useInventory } from './InventoryContext';
 import { useAuth } from './AuthContext';
 import { auth, db } from '../lib/firebase';
 import { sanitizeFirestoreData } from '../lib/firestoreUtils';
+import { safeLocalStorageGet, safeLocalStorageSet, cacheOrdersSafely } from '../lib/storage';
 import { collection, doc, onSnapshot, setDoc, getDocs, writeBatch } from 'firebase/firestore';
 
 interface CartContextType {
@@ -69,7 +70,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Synchronous initial active user detection to avoid missing cached cart on mount
   const getInitialUserId = () => {
     if (auth.currentUser?.uid) return auth.currentUser.uid;
-    const cachedUser = localStorage.getItem('thriftloop_user');
+    const cachedUser = safeLocalStorageGet('thriftloop_user');
     if (cachedUser) {
       try {
         const parsed = JSON.parse(cachedUser);
@@ -83,7 +84,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const initialUserId = getInitialUserId();
     if (initialUserId) {
       const primaryKey = `thriftloop_cart_user_${initialUserId}`;
-      const saved = localStorage.getItem(primaryKey);
+      const saved = safeLocalStorageGet(primaryKey);
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
@@ -121,7 +122,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Immediately load local account cart so there's no UI flash
     const userKey = `thriftloop_cart_user_${currentUserId}`;
-    const localSaved = localStorage.getItem(userKey);
+    const localSaved = safeLocalStorageGet(userKey);
     if (localSaved) {
       try {
         const parsed = JSON.parse(localSaved);
@@ -163,12 +164,12 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
             quantity: typeof item.quantity === 'number' && item.quantity > 0 ? item.quantity : 1,
           }));
           setCart(items);
-          localStorage.setItem(`thriftloop_cart_user_${currentUserId}`, JSON.stringify(items));
+          safeLocalStorageSet(`thriftloop_cart_user_${currentUserId}`, JSON.stringify(items));
         }
       } else {
         // Firestore doc doesn't exist yet: check fresh localStorage
         const userKey = `thriftloop_cart_user_${currentUserId}`;
-        const currentSaved = localStorage.getItem(userKey);
+        const currentSaved = safeLocalStorageGet(userKey);
         let initialItems: CartItem[] = [];
         if (currentSaved) {
           try {
@@ -204,7 +205,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     const key = `thriftloop_cart_user_${currentUserId}`;
-    localStorage.setItem(key, JSON.stringify(cart));
+    safeLocalStorageSet(key, JSON.stringify(cart));
 
     if (isRemoteUpdateRef.current) {
       isRemoteUpdateRef.current = false;
@@ -237,7 +238,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [currentUser?.id]);
 
   const [orders, setOrders] = useState<Order[]>(() => {
-    const saved = localStorage.getItem('thriftloop_orders');
+    const saved = safeLocalStorageGet('thriftloop_orders');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
@@ -296,7 +297,8 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // sort by newest
         loaded.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
         setOrders(loaded);
-        localStorage.setItem('thriftloop_orders', JSON.stringify(loaded));
+        // Safely cache lightweight copy without throwing QuotaExceededError
+        cacheOrdersSafely(loaded);
       }
     }, (error) => {
       console.warn('Firestore orders sync notice:', error);
@@ -373,7 +375,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const nextCart = prev.filter(item => item.product.id !== productId);
       const currentUserId = currentUser?.id ?? null;
       if (currentUserId) {
-        localStorage.setItem(`thriftloop_cart_user_${currentUserId}`, JSON.stringify(nextCart));
+        safeLocalStorageSet(`thriftloop_cart_user_${currentUserId}`, JSON.stringify(nextCart));
       }
       return nextCart;
     });
@@ -386,7 +388,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setDiscountCode('');
     const currentUserId = currentUser?.id ?? null;
     if (currentUserId) {
-      localStorage.setItem(`thriftloop_cart_user_${currentUserId}`, JSON.stringify([]));
+      safeLocalStorageSet(`thriftloop_cart_user_${currentUserId}`, JSON.stringify([]));
       syncCartToFirestore(currentUserId, []);
     }
   };
