@@ -81,14 +81,26 @@ export interface CourierCheckpoint {
   description: string;
   completed: boolean;
   isCurrent?: boolean;
+  rawStatus?: string;
 }
 
 export interface CourierInfo {
   provider: string;
+  carrier?: string;
   trackingNumber: string;
+  trackingUrl?: string;
   currentHub: string; // e.g. "Metro Sorting Hub (Central Gateway)"
   estimatedDelivery: string;
   timeline: CourierCheckpoint[];
+  trackingStatus?: 'PRE_TRANSIT' | 'TRANSIT' | 'OUT_FOR_DELIVERY' | 'DELIVERED' | 'RETURNED' | 'FAILURE' | 'UNKNOWN';
+  statusDetails?: string;
+  isShippoSandbox?: boolean;
+  isLiveShippo?: boolean;
+  lastSyncedAt?: string;
+  shippoOrderId?: string;
+  shippoShipmentId?: string;
+  shippoPortalUrl?: string;
+  shippoShipmentsUrl?: string;
 }
 
 export interface Order {

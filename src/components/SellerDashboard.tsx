@@ -102,7 +102,7 @@ export const SellerDashboard: React.FC = () => {
     openSellerProfile
   } = useInventory();
   const { currentUser } = useAuth();
-  const { orders, openOrderTracking } = useCart();
+  const { orders, openOrderTracking, setIsShippoDiagnosticsOpen } = useCart();
 
   const [isUploadingNew, setIsUploadingNew] = useState(false);
 
@@ -1428,7 +1428,7 @@ export const SellerDashboard: React.FC = () => {
 
       {/* Customer Orders & Outbound Courier Fulfillment Table */}
       <div className="bg-white rounded-2xl border border-stone-200 shadow-xs overflow-hidden">
-        <div className="p-5 border-b border-stone-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div className="p-5 border-b border-stone-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h3 className="font-sans text-lg font-bold text-stone-900 flex items-center gap-2">
               <Truck className="w-4 h-4 text-amber-800" />
@@ -1437,6 +1437,41 @@ export const SellerDashboard: React.FC = () => {
             <p className="text-xs text-stone-500 mt-0.5">
               Live courier routing, sorting hub scans, and delivery checkpoints for pieces bought from your boutique.
             </p>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto">
+            <button
+              onClick={() => setIsShippoDiagnosticsOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-stone-100 hover:bg-stone-200 text-stone-800 border border-stone-300 rounded-xl text-xs font-semibold transition-all cursor-pointer shadow-2xs"
+              title="Test Shippo API connection & carrier accounts"
+            >
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span>Shippo Health</span>
+            </button>
+
+            <a
+              href="https://apps.goshippo.com/orders"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-xl text-xs font-semibold transition-all cursor-pointer shadow-xs"
+              title="Open Shippo Merchant Orders Dashboard to print labels and manage fulfillment"
+            >
+              <Truck className="w-3.5 h-3.5 text-amber-800" />
+              <span>Orders Queue</span>
+              <ExternalLink className="w-3 h-3 text-amber-700" />
+            </a>
+
+            <a
+              href="https://apps.goshippo.com/shipments"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-stone-100 hover:bg-stone-200 text-stone-800 border border-stone-300 rounded-xl text-xs font-semibold transition-all cursor-pointer shadow-2xs"
+              title="Open Shippo Shipments Dashboard to see active tracking progress"
+            >
+              <Package className="w-3.5 h-3.5 text-stone-700" />
+              <span>Shippo Shipments</span>
+              <ExternalLink className="w-3 h-3 text-stone-600" />
+            </a>
           </div>
         </div>
 

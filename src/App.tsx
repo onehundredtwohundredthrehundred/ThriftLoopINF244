@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { InventoryProvider } from './context/InventoryContext';
-import { CartProvider } from './context/CartContext';
+import { CartProvider, useCart } from './context/CartContext';
 import { Navbar } from './components/Navbar';
 import { AuthModal } from './components/AuthModal';
 import { ProductCatalog } from './components/ProductCatalog';
@@ -13,10 +13,12 @@ import { SellerDashboard } from './components/SellerDashboard';
 import { PrintableReportModal } from './components/PrintableReportModal';
 import { SellerProfileModal } from './components/SellerProfileModal';
 import { AccountSettingsModal } from './components/AccountSettingsModal';
+import { ShippoDiagnosticsModal } from './components/ShippoDiagnosticsModal';
 import { Footer } from './components/Footer';
 
 function MainAppContent() {
   const { currentUser } = useAuth();
+  const { isShippoDiagnosticsOpen, setIsShippoDiagnosticsOpen } = useCart();
   const [currentView, setCurrentView] = useState<'catalog' | 'seller_dashboard'>(() => {
     return currentUser && currentUser.role === 'seller' ? 'seller_dashboard' : 'catalog';
   });
@@ -52,6 +54,10 @@ function MainAppContent() {
       <PrintableReportModal />
       <SellerProfileModal setCurrentView={setCurrentView} />
       <AccountSettingsModal />
+      <ShippoDiagnosticsModal 
+        isOpen={isShippoDiagnosticsOpen} 
+        onClose={() => setIsShippoDiagnosticsOpen(false)} 
+      />
       <AuthModal />
 
       {/* Footer */}

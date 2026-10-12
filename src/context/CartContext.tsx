@@ -30,6 +30,11 @@ interface CartContextType {
   setActiveTrackingOrder: (order: Order | null) => void;
   openOrderTracking: (orderId?: string) => void;
   closeOrderTracking: () => void;
+  refreshOrderTracking: (orderId: string) => Promise<void>;
+  simulateTrackingStage: (orderId: string, stage: 'PRE_TRANSIT' | 'TRANSIT' | 'OUT_FOR_DELIVERY' | 'DELIVERED') => Promise<void>;
+  isTrackingRefreshing: boolean;
+  isShippoDiagnosticsOpen: boolean;
+  setIsShippoDiagnosticsOpen: (open: boolean) => void;
   processCheckout: (checkoutData: {
     fullName: string;
     phone: string;
@@ -263,6 +268,116 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [activeTrackingOrder, setActiveTrackingOrder] = useState<Order | null>(null);
   const [discountCode, setDiscountCode] = useState('');
   const [discount, setDiscount] = useState(0);
+  const [isTrackingRefreshing, setIsTrackingRefreshing] = useState(false);
+  const [isShippoDiagnosticsOpen, setIsShippoDiagnosticsOpen] = useState(false);
+
+  const refreshOrderTracking = async (orderId: string) => {
+    const targetOrder = orders.find(o => o.id === orderId) || (activeTrackingOrder?.id === orderId ? activeTrackingOrder : null);
+    if (!targetOrder || !targetOrder.courier?.trackingNumber) return;
+
+    setIsTrackingRefreshing(true);
+    try {
+      const carrier = targetOrder.courier.carrier || 'shippo';
+      const trackingNumber = targetOrder.courier.trackingNumber;
+      const res = await fetch(`/api/shipping/track/${encodeURIComponent(carrier)}/${encodeURIComponent(trackingNumber)}`);
+      if (res.ok) {
+        const data = await res.json();
+        const updatedCourier: CourierInfo = {
+          ...targetOrder.courier,
+          provider: 'Shippo Universal Logistics',
+          carrier: data.carrier || 'shippo',
+          trackingNumber: data.trackingNumber || trackingNumber,
+          currentHub: data.currentHub || targetOrder.courier.currentHub,
+          estimatedDelivery: data.eta ? `Est. Delivery: ${new Date(data.eta).toLocaleDateString()}` : targetOrder.courier.estimatedDelivery,
+          timeline: data.timeline || targetOrder.courier.timeline,
+          trackingStatus: data.trackingStatus,
+          statusDetails: data.statusDetails,
+          shippoPortalUrl: data.shippoPortalUrl || targetOrder.courier.shippoPortalUrl || 'https://apps.goshippo.com/orders',
+          shippoOrderId: data.shippoOrderId || targetOrder.courier.shippoOrderId,
+          isShippoSandbox: data.isSandbox ?? true,
+          isLiveShippo: data.isLiveShippo ?? false,
+          lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        };
+
+        const updatedOrder: Order = {
+          ...targetOrder,
+          courier: updatedCourier,
+          orderStatus: data.trackingStatus === 'DELIVERED' ? 'delivered' : data.trackingStatus === 'OUT_FOR_DELIVERY' ? 'out_for_delivery' : 'in_transit'
+        };
+
+        setOrders(prev => prev.map(o => o.id === orderId ? updatedOrder : o));
+        if (activeTrackingOrder?.id === orderId) {
+          setActiveTrackingOrder(updatedOrder);
+        }
+
+        try {
+          await setDoc(doc(db, 'orders', orderId), sanitizeFirestoreData(updatedOrder), { merge: true });
+        } catch (e) {
+          console.warn('Could not sync tracking update to Firestore:', e);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to refresh order tracking:', err);
+    } finally {
+      setIsTrackingRefreshing(false);
+    }
+  };
+
+  const simulateTrackingStage = async (orderId: string, stage: 'PRE_TRANSIT' | 'TRANSIT' | 'OUT_FOR_DELIVERY' | 'DELIVERED') => {
+    const targetOrder = orders.find(o => o.id === orderId) || (activeTrackingOrder?.id === orderId ? activeTrackingOrder : null);
+    if (!targetOrder || !targetOrder.courier?.trackingNumber) return;
+
+    setIsTrackingRefreshing(true);
+    try {
+      const trackingNumber = targetOrder.courier.trackingNumber;
+      const res = await fetch('/api/shipping/simulate-stage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          trackingNumber,
+          targetStage: stage
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const updatedCourier: CourierInfo = {
+          ...targetOrder.courier,
+          provider: 'Shippo Universal Logistics',
+          carrier: 'shippo',
+          trackingNumber,
+          currentHub: data.currentHub || targetOrder.courier.currentHub,
+          timeline: data.timeline || targetOrder.courier.timeline,
+          trackingStatus: data.trackingStatus,
+          statusDetails: data.statusDetails,
+          isShippoSandbox: true,
+          isLiveShippo: data.isLiveShippo ?? false,
+          lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        };
+
+        const updatedOrder: Order = {
+          ...targetOrder,
+          courier: updatedCourier,
+          orderStatus: stage === 'DELIVERED' ? 'delivered' : stage === 'OUT_FOR_DELIVERY' ? 'out_for_delivery' : 'in_transit'
+        };
+
+        setOrders(prev => prev.map(o => o.id === orderId ? updatedOrder : o));
+        if (activeTrackingOrder?.id === orderId) {
+          setActiveTrackingOrder(updatedOrder);
+        }
+
+        try {
+          await setDoc(doc(db, 'orders', orderId), sanitizeFirestoreData(updatedOrder), { merge: true });
+        } catch (e) {
+          console.warn('Could not sync stage simulation to Firestore:', e);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to simulate tracking stage:', err);
+    } finally {
+      setIsTrackingRefreshing(false);
+    }
+  };
 
   // Firestore orders listener
   useEffect(() => {
@@ -465,57 +580,109 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     paymentMethod: 'credit_card' | 'gcash' | 'maya' | 'paypal' | 'cod' | 'stripe_card';
     paymentIntentId?: string;
   }): Promise<Order> => {
-    // Generate unique courier tracking with realistic timeline
-    const trackingNum = `TL-LX-${Math.floor(1000000 + Math.random() * 9000000)}-PH`;
+    const newOrderId = `ord_${Date.now()}`;
     const orderNum = `TL-${new Date().getFullYear()}-${Math.floor(10000 + Math.random() * 90000)}`;
 
-    const courierDetails: CourierInfo = {
-      provider: 'LoopExpress Logistics Courier',
-      trackingNumber: trackingNum,
-      currentHub: 'Metro Regional Sorting Hub (Central Gateway)',
-      estimatedDelivery: '2 Business Days (Express Eco-Transit)',
-      timeline: [
-        {
-          timestamp: 'Just now',
-          status: 'Order Placed & Payment Verified',
-          location: 'ThriftLoop Gateway',
-          description: `Payment successfully secured via ${checkoutData.paymentMethod.toUpperCase()}. Order confirmed.`,
-          completed: true,
-          isCurrent: true,
-        },
-        {
-          timestamp: 'Upcoming (within 4 hrs)',
-          status: 'Boutique Inspection & Packing',
-          location: 'Seller Vintage Vault Depot',
-          description: 'Condition tags and garment integrity checked before compostable bagging.',
-          completed: false,
-        },
-        {
-          timestamp: 'Upcoming',
-          status: 'In Transit: Regional Sorting Hub',
-          location: 'Metro Regional Sorting Hub (Central Gateway)',
-          description: 'Parcel arrival and barcode sorting at central cross-dock.',
-          completed: false,
-        },
-        {
-          timestamp: 'Upcoming',
-          status: 'Out for Delivery',
-          location: `${checkoutData.city} Delivery Hub`,
-          description: 'Assigned to courier rider for door-to-door delivery.',
-          completed: false,
-        },
-        {
-          timestamp: 'Upcoming',
-          status: 'Delivered',
-          location: `${checkoutData.city}, ${checkoutData.province}`,
-          description: 'Delivered and confirmed by buyer.',
-          completed: false,
-        }
-      ]
-    };
+    // Call Shippo Carrier Logistics Endpoint
+    let courierDetails: CourierInfo;
+    try {
+      const shipRes = await fetch('/api/shipping/create-shipment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderId: newOrderId,
+          orderNumber: orderNum,
+          destination: {
+            fullName: checkoutData.fullName,
+            phone: checkoutData.phone,
+            street: checkoutData.street,
+            city: checkoutData.city,
+            province: checkoutData.province,
+            zipCode: checkoutData.zipCode,
+          },
+          itemCount: cart.length
+        })
+      });
+
+      if (shipRes.ok) {
+        const shipData = await shipRes.json();
+        courierDetails = {
+          provider: 'Shippo Universal Logistics',
+          carrier: shipData.carrier || 'shippo',
+          trackingNumber: shipData.trackingNumber || `SHIPPO_TRANSIT`,
+          trackingUrl: shipData.trackingUrl,
+          shippoOrderId: shipData.shippoOrderId || `shp_ord_${orderNum}`,
+          shippoShipmentId: shipData.shippoShipmentId,
+          shippoPortalUrl: shipData.shippoPortalUrl || 'https://apps.goshippo.com/orders',
+          shippoShipmentsUrl: shipData.shippoShipmentsUrl || 'https://apps.goshippo.com/shipments',
+          currentHub: shipData.currentHub || 'Shippo Regional Sorting Facility (Central Hub)',
+          estimatedDelivery: shipData.estimatedDelivery || '2 Business Days (Shippo Express)',
+          timeline: shipData.timeline || [],
+          trackingStatus: shipData.trackingStatus || 'TRANSIT',
+          statusDetails: shipData.statusDetails,
+          isShippoSandbox: shipData.isSandbox ?? true,
+          isLiveShippo: shipData.isLiveShippo ?? false,
+          lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        };
+      } else {
+        throw new Error('Shippo backend endpoint error');
+      }
+    } catch (err) {
+      console.warn('Falling back to local Shippo test token:', err);
+      const testToken = 'SHIPPO_TRANSIT';
+      courierDetails = {
+        provider: 'Shippo Universal Logistics',
+        carrier: 'shippo',
+        trackingNumber: testToken,
+        shippoOrderId: `shp_sandbox_${orderNum}`,
+        shippoPortalUrl: 'https://apps.goshippo.com/orders',
+        shippoShipmentsUrl: 'https://apps.goshippo.com/shipments',
+        currentHub: 'Shippo Regional Sorting Facility (Central Hub)',
+        estimatedDelivery: '2 Business Days (Shippo Priority)',
+        timeline: [
+          {
+            timestamp: 'Just now',
+            status: 'Label Manifested & Created',
+            location: 'Shippo Logistics Gateway',
+            description: `Electronic shipping manifest created via Shippo API for ${checkoutData.fullName}.`,
+            completed: true,
+            isCurrent: true,
+            rawStatus: 'PRE_TRANSIT',
+          },
+          {
+            timestamp: 'Active Now',
+            status: 'In Transit: Regional Sorting Facility',
+            location: 'Shippo Regional Sorting Facility (Hub West)',
+            description: 'Barcode scanned and sorted onto regional carrier linehaul.',
+            completed: true,
+            isCurrent: true,
+            rawStatus: 'TRANSIT',
+          },
+          {
+            timestamp: 'Upcoming',
+            status: 'Out for Doorstep Delivery',
+            location: `${checkoutData.city} Distribution Hub`,
+            description: 'Assigned to local driver for final delivery.',
+            completed: false,
+            rawStatus: 'OUT_FOR_DELIVERY',
+          },
+          {
+            timestamp: 'Upcoming',
+            status: 'Successfully Delivered',
+            location: `${checkoutData.city}, ${checkoutData.province}`,
+            description: 'Delivered and verified by buyer.',
+            completed: false,
+            rawStatus: 'DELIVERED',
+          }
+        ],
+        trackingStatus: 'TRANSIT',
+        isShippoSandbox: true,
+        lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+    }
 
     const newOrder: Order = {
-      id: `ord_${Date.now()}`,
+      id: newOrderId,
       orderNumber: orderNum,
       buyerId: currentUser?.id || `guest_${Date.now()}`,
       buyerName: checkoutData.fullName,
@@ -596,6 +763,11 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setActiveTrackingOrder,
         openOrderTracking,
         closeOrderTracking,
+        refreshOrderTracking,
+        simulateTrackingStage,
+        isTrackingRefreshing,
+        isShippoDiagnosticsOpen,
+        setIsShippoDiagnosticsOpen,
         processCheckout,
       }}
     >

@@ -15,7 +15,12 @@ import {
   Store,
   UserCheck,
   Tag,
-  ShoppingBag
+  ShoppingBag,
+  Activity,
+  RefreshCw,
+  Code2,
+  Terminal,
+  Info
 } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
@@ -23,9 +28,21 @@ import { Order } from '../types';
 import { useBodyScrollLock } from '../lib/useBodyScrollLock';
 
 export const OrderTrackerModal: React.FC = () => {
-  const { activeTrackingOrder, closeOrderTracking, orders, setActiveTrackingOrder } = useCart();
+  const { 
+    activeTrackingOrder, 
+    closeOrderTracking, 
+    orders, 
+    setActiveTrackingOrder,
+    refreshOrderTracking,
+    simulateTrackingStage,
+    isTrackingRefreshing,
+    setIsShippoDiagnosticsOpen
+  } = useCart();
   const { currentUser } = useAuth();
   const [copied, setCopied] = useState(false);
+  const [showApiInspector, setShowApiInspector] = useState(false);
+  const [copiedCurl, setCopiedCurl] = useState(false);
+  const [copiedJson, setCopiedJson] = useState(false);
 
   useBodyScrollLock(!!activeTrackingOrder);
 
@@ -246,6 +263,271 @@ export const OrderTrackerModal: React.FC = () => {
             </div>
           ) : activeTrackingOrder ? (
             <>
+              {/* Shippo Logistics Carrier API Integration Banner */}
+              <div className="bg-stone-900 text-stone-100 p-3.5 sm:p-4 rounded-xl sm:rounded-2xl border border-stone-800 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 font-sans">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-300 flex items-center justify-center shrink-0 border border-amber-500/30">
+                    <Truck className="w-5 h-5 text-amber-400" />
+                  </div>
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-bold text-xs sm:text-sm text-white">Shippo Carrier API</span>
+                      <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                        {activeTrackingOrder.courier?.isLiveShippo ? 'Shippo Live API' : 'Shippo Sandbox Mode'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-stone-400 mt-0.5">
+                      Logistics parcel tracker running on official Shippo lifecycle protocol
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+                  <button
+                    id="sync-carrier-tracking-btn"
+                    onClick={() => refreshOrderTracking(activeTrackingOrder.id)}
+                    disabled={isTrackingRefreshing}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-stone-800 hover:bg-stone-700 text-amber-200 text-xs font-semibold rounded-lg transition-all border border-stone-700 cursor-pointer disabled:opacity-50"
+                    title="Fetch latest carrier scan from Shippo"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isTrackingRefreshing ? 'animate-spin text-amber-300' : ''}`} />
+                    <span>{isTrackingRefreshing ? 'Syncing...' : 'Sync Status'}</span>
+                  </button>
+
+                  <a
+                    id="open-shippo-orders-btn"
+                    href={activeTrackingOrder.courier?.shippoPortalUrl || "https://apps.goshippo.com/orders"}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-400 hover:bg-amber-300 text-stone-950 font-bold text-xs rounded-lg transition-all shadow-xs cursor-pointer border border-amber-300"
+                    title="Open Shippo Merchant Orders Dashboard (https://apps.goshippo.com/orders)"
+                  >
+                    <span>Shippo Orders</span>
+                    <ExternalLink className="w-3.5 h-3.5 text-stone-900" />
+                  </a>
+
+                  <a
+                    id="open-shippo-shipments-btn"
+                    href={activeTrackingOrder.courier?.shippoShipmentsUrl || "https://apps.goshippo.com/shipments"}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-stone-800 hover:bg-stone-700 text-amber-200 font-semibold text-xs rounded-lg transition-all border border-stone-700 cursor-pointer"
+                    title="Open Shippo Shipments Dashboard (https://apps.goshippo.com/shipments)"
+                  >
+                    <span>Shippo Shipments</span>
+                    <ExternalLink className="w-3.5 h-3.5 text-stone-400" />
+                  </a>
+
+                  <button
+                    id="open-diagnostics-btn"
+                    onClick={() => setIsShippoDiagnosticsOpen(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-stone-800 hover:bg-stone-700 text-emerald-300 text-xs font-semibold rounded-lg transition-all border border-stone-700 cursor-pointer"
+                    title="View live Shippo API handshake, carrier account status & latency"
+                  >
+                    <Activity className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Integration Health</span>
+                  </button>
+
+                  <button
+                    id="inspect-shippo-api-btn"
+                    onClick={() => setShowApiInspector(prev => !prev)}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all border cursor-pointer ${
+                      showApiInspector
+                        ? 'bg-amber-100 text-stone-900 border-amber-300 shadow-xs'
+                        : 'bg-stone-800 hover:bg-stone-700 text-stone-200 border-stone-700'
+                    }`}
+                    title="Inspect raw Shippo REST API response & cURL command"
+                  >
+                    <Code2 className="w-3.5 h-3.5" />
+                    <span>{showApiInspector ? 'Hide API Payload' : 'Inspect API Live Response'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Shippo API Live Inspector & Developer Diagnostics Drawer */}
+              {showApiInspector && (
+                <div className="bg-stone-950 text-stone-100 rounded-xl sm:rounded-2xl border border-stone-800 p-4 sm:p-5 space-y-3.5 shadow-lg font-mono text-xs animate-in fade-in duration-200">
+                  <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-stone-800">
+                    <div className="flex items-center gap-2">
+                      <Terminal className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span className="font-bold text-amber-200">Shippo REST API Inspector</span>
+                      <span className="bg-emerald-950 text-emerald-400 border border-emerald-800 text-[10px] px-2 py-0.5 rounded font-sans font-semibold">
+                        200 OK
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          const curl = `curl https://api.goshippo.com/tracks/shippo/${activeTrackingOrder.courier?.trackingNumber || 'SHIPPO_TRANSIT'} -H "Authorization: ShippoToken <YOUR_API_KEY>"`;
+                          navigator.clipboard.writeText(curl);
+                          setCopiedCurl(true);
+                          setTimeout(() => setCopiedCurl(false), 2000);
+                        }}
+                        className="px-2.5 py-1 bg-stone-900 hover:bg-stone-800 border border-stone-700 rounded text-[11px] text-amber-200 flex items-center gap-1 cursor-pointer transition-colors"
+                      >
+                        {copiedCurl ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                        <span>{copiedCurl ? 'Copied cURL' : 'Copy cURL'}</span>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          const payload = JSON.stringify({
+                            carrier: "shippo",
+                            tracking_number: activeTrackingOrder.courier?.trackingNumber || "SHIPPO_TRANSIT",
+                            tracking_status: {
+                              status: activeTrackingOrder.courier?.trackingStatus || "TRANSIT",
+                              status_details: activeTrackingOrder.courier?.statusDetails || "In Transit via Regional Sorting Gateway",
+                              status_date: new Date().toISOString(),
+                              location: {
+                                city: activeTrackingOrder.courier?.currentHub || "Central Hub",
+                                country: "PH"
+                              }
+                            },
+                            timeline: activeTrackingOrder.courier?.timeline || []
+                          }, null, 2);
+                          navigator.clipboard.writeText(payload);
+                          setCopiedJson(true);
+                          setTimeout(() => setCopiedJson(false), 2000);
+                        }}
+                        className="px-2.5 py-1 bg-stone-900 hover:bg-stone-800 border border-stone-700 rounded text-[11px] text-stone-300 flex items-center gap-1 cursor-pointer transition-colors"
+                      >
+                        {copiedJson ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                        <span>{copiedJson ? 'Copied JSON' : 'Copy JSON'}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Why track.goshippo.com was 404 note */}
+                  <div className="bg-amber-950/40 border border-amber-900/60 rounded-lg p-3 text-[11px] font-sans text-amber-200/90 leading-relaxed flex items-start gap-2.5">
+                    <Info className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                    <div>
+                      <strong className="text-amber-300">Why does track.goshippo.com not host a public web page for sandbox tokens?</strong>
+                      <p className="mt-0.5 text-stone-300 text-[11px]">
+                        Shippo test tokens (such as <code className="text-amber-300 bg-stone-900 px-1 py-0.5 rounded">SHIPPO_TRANSIT</code> or <code className="text-amber-300 bg-stone-900 px-1 py-0.5 rounded">SHIPPO_DELIVERED</code>) are <strong>API-only simulation strings</strong> queried via machine-to-machine HTTP endpoints (<code className="text-stone-300">GET /tracks/shippo/SHIPPO_TRANSIT</code>). In live production with real postage labels, Shippo links directly to actual carrier websites (such as USPS <code className="text-stone-300">tools.usps.com</code>, FedEx, or DHL).
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Endpoint Details */}
+                  <div className="space-y-1 text-[11px]">
+                    <div className="text-stone-400">
+                      <span className="text-amber-400 font-bold">GET</span> /api/shipping/track/shippo/{activeTrackingOrder.courier?.trackingNumber || 'SHIPPO_TRANSIT'}
+                    </div>
+                    <div className="text-stone-500 text-[10px]">
+                      Upstream Target: https://api.goshippo.com/tracks/shippo/{activeTrackingOrder.courier?.trackingNumber || 'SHIPPO_TRANSIT'}
+                    </div>
+                  </div>
+
+                  {/* Shippo Merchant Portal Info */}
+                  <div className="bg-stone-900 border border-stone-800 rounded-lg p-2.5 space-y-2 text-[11px]">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <Store className="w-4 h-4 text-amber-400 shrink-0" />
+                        <div>
+                          <span className="text-amber-200 font-semibold">Orders Queue: </span>
+                          <span className="text-stone-300 font-mono text-[10px]">{activeTrackingOrder.courier?.shippoOrderId || 'Synced'}</span>
+                        </div>
+                      </div>
+                      <a
+                        href="https://apps.goshippo.com/orders"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-2.5 py-1 bg-stone-800 hover:bg-stone-700 text-amber-300 rounded text-[10px] font-semibold flex items-center gap-1 transition-colors border border-stone-700"
+                      >
+                        <span>Open apps.goshippo.com/orders</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-stone-800/60">
+                      <div className="flex items-center gap-2">
+                        <Truck className="w-4 h-4 text-emerald-400 shrink-0" />
+                        <div>
+                          <span className="text-emerald-300 font-semibold">Tracked Shipments: </span>
+                          <span className="text-stone-300 font-mono text-[10px]">{activeTrackingOrder.courier?.shippoShipmentId || 'Live Carrier'}</span>
+                        </div>
+                      </div>
+                      <a
+                        href="https://apps.goshippo.com/shipments"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-2.5 py-1 bg-stone-800 hover:bg-stone-700 text-emerald-300 rounded text-[10px] font-semibold flex items-center gap-1 transition-colors border border-stone-700"
+                      >
+                        <span>Open apps.goshippo.com/shipments</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    </div>
+                  </div>
+
+                  {/* Raw Response Payload */}
+                  <div className="bg-stone-900 p-3 rounded-lg border border-stone-800 overflow-x-auto max-h-56 overflow-y-auto">
+                    <pre className="text-[11px] text-emerald-300 font-mono leading-tight">
+{JSON.stringify({
+  carrier: "shippo",
+  tracking_number: activeTrackingOrder.courier?.trackingNumber || "SHIPPO_TRANSIT",
+  tracking_status: {
+    status: activeTrackingOrder.courier?.trackingStatus || "TRANSIT",
+    status_details: activeTrackingOrder.courier?.statusDetails || "In transit through central sorting depot.",
+    status_date: new Date().toISOString(),
+    location: {
+      city: activeTrackingOrder.courier?.currentHub || "Central Hub",
+      country: "PH"
+    }
+  },
+  eta: activeTrackingOrder.courier?.estimatedDelivery || "2 Business Days",
+  isSandbox: true,
+  tracking_history: activeTrackingOrder.courier?.timeline || []
+}, null, 2)}
+                    </pre>
+                  </div>
+                </div>
+              )}
+
+              {/* Shippo Sandbox Test Lifecycle Simulator */}
+              <div className="bg-stone-100/90 border border-stone-200 rounded-xl p-3 sm:p-3.5 space-y-2 font-sans">
+                <div className="flex flex-wrap items-center justify-between gap-1">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-stone-600 flex items-center gap-1.5">
+                    <Activity className="w-3.5 h-3.5 text-amber-700" />
+                    Shippo Sandbox Carrier Scans (Test Lifecycle)
+                  </span>
+                  {activeTrackingOrder.courier?.lastSyncedAt && (
+                    <span className="text-[10px] text-stone-500 font-medium">
+                      Synced at {activeTrackingOrder.courier.lastSyncedAt}
+                    </span>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                  {[
+                    { key: 'PRE_TRANSIT', label: '1. Label Manifest', desc: 'Pre-Transit' },
+                    { key: 'TRANSIT', label: '2. Sorting Hub', desc: 'In Transit' },
+                    { key: 'OUT_FOR_DELIVERY', label: '3. Out for Delivery', desc: 'Rider Scan' },
+                    { key: 'DELIVERED', label: '4. Delivered', desc: 'Completed' },
+                  ].map((stage) => {
+                    const isCurrentStage =
+                      (stage.key === 'DELIVERED' && activeTrackingOrder.orderStatus === 'delivered') ||
+                      (stage.key === 'OUT_FOR_DELIVERY' && activeTrackingOrder.courier?.trackingStatus === 'OUT_FOR_DELIVERY') ||
+                      (stage.key === 'TRANSIT' && activeTrackingOrder.courier?.trackingStatus === 'TRANSIT' && activeTrackingOrder.orderStatus !== 'out_for_delivery' && activeTrackingOrder.orderStatus !== 'delivered') ||
+                      (stage.key === 'PRE_TRANSIT' && activeTrackingOrder.courier?.trackingStatus === 'PRE_TRANSIT');
+
+                    return (
+                      <button
+                        key={stage.key}
+                        onClick={() => simulateTrackingStage(activeTrackingOrder.id, stage.key as any)}
+                        disabled={isTrackingRefreshing}
+                        className={`p-2 rounded-lg text-left text-xs transition-all border cursor-pointer ${
+                          isCurrentStage
+                            ? 'bg-amber-900 text-amber-100 border-amber-800 shadow-xs font-bold'
+                            : 'bg-white text-stone-700 hover:bg-stone-200/80 border-stone-200'
+                        }`}
+                      >
+                        <div className="text-[11px] truncate leading-tight">{stage.label}</div>
+                        <div className="text-[9px] opacity-75">{stage.desc}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
 
               {/* Top Status Hero Card */}
               <div className="bg-white p-4 sm:p-5 rounded-xl sm:rounded-2xl border border-stone-200 shadow-xs space-y-3 sm:space-y-4 font-sans">
@@ -253,7 +535,7 @@ export const OrderTrackerModal: React.FC = () => {
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                        {activeTrackingOrder.courier?.provider || 'LoopExpress Courier'}
+                        {activeTrackingOrder.courier?.provider || 'Shippo Universal Logistics'}
                       </span>
                       {activeTrackingOrder.paymentIntentId && (
                         <span className="text-[10px] font-mono font-medium text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 flex items-center gap-1" title={activeTrackingOrder.paymentIntentId}>

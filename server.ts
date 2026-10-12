@@ -7,6 +7,14 @@ import {
   createStripePaymentIntent,
   confirmStripePaymentIntent,
 } from "./server/stripe";
+import {
+  getShippoConfig,
+  createShippoShipment,
+  trackShippoPackage,
+  advanceShippoSandboxStage,
+  testShippoConnection,
+  generateTestShippoLabel,
+} from "./server/shippo";
 
 dotenv.config();
 
@@ -136,6 +144,65 @@ async function startServer() {
     } catch (err: any) {
       console.error("Stripe checkout error:", err);
       return res.status(500).json({ error: err.message || "Failed to create Stripe checkout session" });
+    }
+  });
+
+  // Shippo Logistics Carrier API Endpoints
+  app.get("/api/shipping/config", (_req, res) => {
+    res.json(getShippoConfig());
+  });
+
+  app.post("/api/shipping/create-shipment", async (req, res) => {
+    try {
+      const result = await createShippoShipment(req.body);
+      return res.status(200).json(result);
+    } catch (err: any) {
+      console.error("Shippo create shipment error:", err);
+      return res.status(500).json({ error: err.message || "Failed to create shipment" });
+    }
+  });
+
+  app.get("/api/shipping/track/:carrier/:trackingNumber", async (req, res) => {
+    try {
+      const { carrier, trackingNumber } = req.params;
+      const result = await trackShippoPackage(carrier, trackingNumber);
+      return res.status(200).json(result);
+    } catch (err: any) {
+      console.error("Shippo tracking error:", err);
+      return res.status(500).json({ error: err.message || "Failed to track shipment" });
+    }
+  });
+
+  app.post("/api/shipping/simulate-stage", async (req, res) => {
+    try {
+      const { trackingNumber, targetStage } = req.body;
+      const result = await advanceShippoSandboxStage(trackingNumber, targetStage);
+      return res.status(200).json(result);
+    } catch (err: any) {
+      console.error("Shippo stage simulation error:", err);
+      return res.status(500).json({ error: err.message || "Failed to simulate stage" });
+    }
+  });
+
+  // Shippo Live Diagnostics & Verification Probe
+  app.get("/api/shipping/diagnostics", async (_req, res) => {
+    try {
+      const result = await testShippoConnection();
+      return res.status(200).json(result);
+    } catch (err: any) {
+      console.error("Shippo diagnostics error:", err);
+      return res.status(500).json({ error: err.message || "Failed to run Shippo diagnostics" });
+    }
+  });
+
+  // Shippo Sample Label Generation (End-to-End Shipment & Transaction test)
+  app.post("/api/shipping/generate-test-label", async (_req, res) => {
+    try {
+      const result = await generateTestShippoLabel();
+      return res.status(200).json(result);
+    } catch (err: any) {
+      console.error("Shippo label test error:", err);
+      return res.status(500).json({ error: err.message || "Failed to generate test label" });
     }
   });
 

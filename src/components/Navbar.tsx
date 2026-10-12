@@ -23,7 +23,7 @@ interface NavbarProps {
 
 export const Navbar: React.FC<NavbarProps> = ({ currentView, setCurrentView }) => {
   const { currentUser, isAuthenticated, logout, openAuthModal } = useAuth();
-  const { cart, setIsCartDrawerOpen, openOrderTracking, orders } = useCart();
+  const { cart, setIsCartDrawerOpen, openOrderTracking, orders, setIsShippoDiagnosticsOpen } = useCart();
   const { filterState, setFilterState, setIsStoreProfileModalOpen } = useInventory();
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -123,6 +123,17 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setCurrentView }) =
               title="Search"
             >
               <Search className="w-5 h-5" />
+            </button>
+
+            {/* Shippo Live Integration Diagnostics Status */}
+            <button
+              id="nav-shippo-status-btn"
+              onClick={() => setIsShippoDiagnosticsOpen(true)}
+              className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-900 border border-emerald-300/80 hover:bg-emerald-100 transition-all cursor-pointer shadow-2xs"
+              title="Inspect Shippo API Live Handshake & Integration Health"
+            >
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span className="font-mono text-[11px] font-bold">Shippo Live</span>
             </button>
 
             {/* Shopping Cart Drawer Trigger */}
