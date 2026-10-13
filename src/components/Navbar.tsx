@@ -1,20 +1,19 @@
 import React, { useState } from 'react';
-import { 
-  ShoppingBag, 
-  User as UserIcon, 
-  Search, 
-  Truck, 
-  Package, 
-  Store, 
-  LogOut, 
-  ChevronDown, 
+import {
+  Store,
+  ShoppingBag,
+  User as UserIcon,
+  Search,
+  LogOut,
+  Settings,
+  Package,
+  Truck,
   Sparkles,
-  Layers,
-  Edit3
+  ChevronDown
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { useCart } from '../context/CartContext';
 import { useInventory } from '../context/InventoryContext';
+import { useCart } from '../context/CartContext';
 
 interface NavbarProps {
   currentView: 'catalog' | 'seller_dashboard';
@@ -22,15 +21,17 @@ interface NavbarProps {
 }
 
 export const Navbar: React.FC<NavbarProps> = ({ currentView, setCurrentView }) => {
-  const { currentUser, isAuthenticated, logout, openAuthModal } = useAuth();
-  const { cart, setIsCartDrawerOpen, openOrderTracking, orders, setIsShippoDiagnosticsOpen } = useCart();
+  const { currentUser, logout, openAuthModal } = useAuth();
   const { filterState, setFilterState, setIsStoreProfileModalOpen } = useInventory();
+  const { cart, setIsCartDrawerOpen, activeTrackingOrder, openOrderTracking } = useCart();
+  const totalItemsCount = cart.reduce((sum, item) => sum + item.quantity, 0);
+  const toggleCart = () => setIsCartDrawerOpen(true);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
 
-  const handleSearchChange = (value: string) => {
-    setFilterState(prev => ({ ...prev, searchQuery: value }));
+  const handleSearchChange = (query: string) => {
+    setFilterState({ ...filterState, searchQuery: query });
     if (currentView !== 'catalog') {
       setCurrentView('catalog');
     }
@@ -45,16 +46,10 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setCurrentView }) =
 
   return (
     <header className="sticky top-0 z-40 bg-[#FDFBF7]/90 backdrop-blur-md border-b border-stone-200">
-      {/* Main navigation bar */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-18">
-          
-          {/* Brand Logo & Tag */}
           <div className="flex items-center gap-8">
-            <div 
-              id="brand-logo"
-              className="flex items-center gap-2.5 text-left select-none pointer-events-none"
-            >
+            <div id="brand-logo" className="flex items-center gap-2.5 text-left select-none pointer-events-none">
               <div className="w-9 h-9 rounded-lg bg-stone-900 text-amber-100 flex items-center justify-center font-serif text-2xl font-bold tracking-tight">
                 TL
               </div>
@@ -65,38 +60,34 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setCurrentView }) =
               </div>
             </div>
 
-            {/* Desktop Navigation Links - Appears when you are a seller */}
-            {currentUser?.role === 'seller' && (
-              <nav className={`hidden md:flex items-center gap-1 text-sm font-medium text-stone-700 transition-all duration-300 overflow-hidden ${isSearchFocused ? 'w-0 opacity-0 px-0 mx-0' : 'opacity-100 ml-4'}`}>
-                <button
-                  id="nav-catalog-link"
-                  onClick={() => setCurrentView('catalog')}
-                  className={`px-3 py-1.5 rounded-md transition-colors ${
-                    currentView === 'catalog' 
-                      ? 'text-amber-900 bg-amber-50 font-semibold' 
-                      : 'hover:text-stone-900 hover:bg-stone-100'
-                  }`}
-                >
-                  Boutique
-                </button>
+            <nav className={`hidden md:flex items-center gap-1 text-sm font-medium text-stone-700 transition-all duration-300 overflow-hidden ${isSearchFocused ? 'w-0 opacity-0 px-0 mx-0' : 'opacity-100 ml-4'}`}>
+              <button
+                id="nav-catalog-link"
+                onClick={() => setCurrentView('catalog')}
+                className={`px-3 py-1.5 rounded-md transition-colors ${
+                  currentView === 'catalog'
+                    ? 'text-amber-900 bg-amber-50 font-semibold'
+                    : 'hover:text-stone-900 hover:bg-stone-100'
+                }`}
+              >
+                Boutique
+              </button>
 
-                <button
-                  id="nav-seller-link"
-                  onClick={() => setCurrentView('seller_dashboard')}
-                  className={`px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5 ${
-                    currentView === 'seller_dashboard' 
-                      ? 'text-amber-900 bg-amber-50 font-semibold' 
-                      : 'hover:text-stone-900 hover:bg-stone-100'
-                  }`}
-                >
-                  <Store className="w-4 h-4 text-amber-700" />
-                  Dashboard
-                </button>
-              </nav>
-            )}
+              <button
+                id="nav-seller-link"
+                onClick={() => setCurrentView('seller_dashboard')}
+                className={`px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5 ${
+                  currentView === 'seller_dashboard'
+                    ? 'text-amber-900 bg-amber-50 font-semibold'
+                    : 'hover:text-stone-900 hover:bg-stone-100'
+                }`}
+              >
+                <Store className="w-4 h-4 text-amber-700" />
+                Dashboard
+              </button>
+            </nav>
           </div>
 
-          {/* Center Search Bar (Desktop) */}
           <div className={`hidden lg:flex flex-col flex-1 mx-6 transition-all duration-300 ease-in-out ${isSearchFocused ? 'max-w-2xl' : 'max-w-sm items-center'}`}>
             <form onSubmit={handleSearchSubmit} className="w-full relative">
               <input
@@ -112,181 +103,116 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setCurrentView }) =
             </form>
           </div>
 
-          {/* Right Action Icons & Auth Controls */}
           <div className="flex items-center gap-2 sm:gap-3">
-            
-            {/* Mobile Search Toggle */}
             <button
-              id="mobile-search-toggle"
               onClick={() => setIsSearchOpen(!isSearchOpen)}
-              className="p-2 text-stone-600 hover:text-stone-900 lg:hidden rounded-lg hover:bg-stone-100"
-              title="Search"
+              className="lg:hidden p-2 text-stone-600 hover:text-stone-900 hover:bg-stone-100 rounded-full transition-colors"
+              aria-label="Toggle search"
             >
               <Search className="w-5 h-5" />
             </button>
 
-            {/* Shippo Live Integration Diagnostics Status */}
-            <button
-              id="nav-shippo-status-btn"
-              onClick={() => setIsShippoDiagnosticsOpen(true)}
-              className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-900 border border-emerald-300/80 hover:bg-emerald-100 transition-all cursor-pointer shadow-2xs"
-              title="Inspect Shippo API Live Handshake & Integration Health"
-            >
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span className="font-mono text-[11px] font-bold">Shippo Live</span>
-            </button>
+            {activeTrackingOrder && (
+              <button
+                onClick={() => openOrderTracking()}
+                className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 border border-amber-300/80 hover:bg-amber-100 rounded-full text-xs font-bold text-amber-900 transition-all shadow-xs animate-pulse"
+              >
+                <Truck className="w-3.5 h-3.5 text-amber-800" />
+                <span className="hidden sm:inline">Track Courier</span>
+              </button>
+            )}
 
-            {/* Shopping Cart Drawer Trigger */}
             <button
-              id="nav-cart-btn"
-              onClick={() => setIsCartDrawerOpen(true)}
-              className="relative p-2 text-stone-800 hover:text-stone-950 rounded-lg hover:bg-stone-100 transition-colors flex items-center gap-1"
-              aria-label="Shopping Bag"
+              id="cart-toggle-btn"
+              onClick={toggleCart}
+              className="relative p-2.5 text-stone-800 hover:bg-stone-100 rounded-full transition-colors flex items-center justify-center"
+              aria-label="Open Cart"
             >
               <ShoppingBag className="w-5 h-5" />
-              {cart.length > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 bg-amber-800 text-white text-[11px] font-bold w-5 h-5 rounded-full flex items-center justify-center shadow-xs">
-                  {cart.reduce((sum, item) => sum + (item.quantity || 1), 0)}
+              {totalItemsCount > 0 && (
+                <span className="absolute top-1 right-1 bg-amber-800 text-white font-bold text-[10px] w-4 h-4 rounded-full flex items-center justify-center shadow-xs">
+                  {totalItemsCount}
                 </span>
               )}
             </button>
 
-            {/* User Auth Section */}
-            {isAuthenticated && currentUser ? (
+            {currentUser ? (
               <div className="relative">
                 <button
-                  id="user-profile-menu-btn"
+                  id="user-menu-btn"
                   onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                  className="flex items-center gap-2 p-1.5 rounded-full hover:bg-stone-100 transition-colors border border-stone-200 bg-white"
+                  className="flex items-center gap-2 p-1.5 pr-2.5 rounded-full border border-stone-200 hover:border-stone-300 bg-white transition-all shadow-xs"
                 >
                   <img
-                    src={currentUser.avatar}
+                    src={currentUser.avatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=300'}
                     alt={currentUser.name}
-                    style={{ objectPosition: currentUser.avatarPosition || '50% 50%' }}
-                    className="w-7 h-7 rounded-full object-cover border border-stone-300"
+                    className="w-7 h-7 rounded-full object-cover border border-stone-200"
                   />
                   <span className="text-xs font-semibold text-stone-800 hidden sm:inline max-w-[100px] truncate">
                     {currentUser.name}
                   </span>
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-bold uppercase hidden sm:inline ${
-                    currentUser.role === 'seller' ? 'bg-amber-100 text-amber-900 border border-amber-200' : 'bg-amber-100/70 text-amber-900 border border-amber-200/80'
-                  }`}>
-                    {currentUser.role}
-                  </span>
                   <ChevronDown className="w-3.5 h-3.5 text-stone-500" />
                 </button>
 
-                {/* Dropdown Menu */}
                 {isUserMenuOpen && (
                   <>
-                    <div 
-                      className="fixed inset-0 z-40 cursor-default" 
-                      onClick={() => setIsUserMenuOpen(false)} 
+                    <div
+                      className="fixed inset-0 z-10"
+                      onClick={() => setIsUserMenuOpen(false)}
                     />
-                    <div 
-                      id="user-dropdown-card"
-                      className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-xl border border-stone-200 py-2 z-50 animate-in fade-in slide-in-from-top-2 duration-150"
-                    >
-                    <div className="px-4 py-2.5 border-b border-stone-100">
-                      <p className="text-xs text-stone-500 font-medium">Signed in as</p>
-                      <div className="flex items-center justify-between gap-1.5 mt-0.5">
-                        <p className="text-sm font-bold text-stone-900 truncate">{currentUser.name}</p>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-bold uppercase shrink-0 ${
-                          currentUser.role === 'seller' 
-                            ? 'bg-amber-100 text-amber-900 border border-amber-200' 
-                            : 'bg-amber-100/70 text-amber-900 border border-amber-200/80'
-                        }`}>
-                          {currentUser.role}
-                        </span>
+                    <div className="absolute right-0 mt-2 w-56 bg-white rounded-2xl shadow-xl border border-stone-200 py-2 z-20 text-xs animate-in fade-in zoom-in-95 duration-150">
+                      <div className="px-4 py-2 border-b border-stone-100">
+                        <p className="font-bold text-stone-900 truncate">{currentUser.name}</p>
+                        <p className="text-[11px] text-stone-500 truncate">{currentUser.email}</p>
+                        <div className="mt-1 flex items-center gap-1.5">
+                          <span className="px-2 py-0.5 rounded-md bg-stone-100 text-stone-700 font-semibold text-[10px] uppercase tracking-wider">
+                            {currentUser.role}
+                          </span>
+                          {currentUser.boutiqueName && (
+                            <span className="text-[10px] text-amber-800 font-medium truncate">
+                              {currentUser.boutiqueName}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      <p className="text-xs text-stone-500 truncate mt-0.5">{currentUser.email}</p>
-                      {currentUser.boutiqueName && (
-                        <p className="text-[11px] text-amber-800 font-medium mt-1">
-                          🏷️ {currentUser.boutiqueName}
-                        </p>
-                      )}
-                    </div>
 
-                    <div className="py-1">
-                      {currentUser.role === 'seller' ? (
-                        <>
-                          <button
-                            id="dropdown-seller-dashboard-btn"
-                            onClick={() => {
-                              setCurrentView('seller_dashboard');
-                              setIsUserMenuOpen(false);
-                            }}
-                            className="w-full text-left px-4 py-2 text-xs font-medium text-stone-700 hover:bg-stone-50 flex items-center gap-2"
-                          >
-                            <Store className="w-4 h-4 text-amber-700" />
-                            <span>Seller Dashboard</span>
-                          </button>
-
-                          <button
-                            id="dropdown-edit-store-btn"
-                            onClick={() => {
-                              setIsStoreProfileModalOpen(true);
-                              setIsUserMenuOpen(false);
-                            }}
-                            className="w-full text-left px-4 py-2 text-xs font-medium text-amber-900 hover:bg-amber-50 flex items-center gap-2 cursor-pointer"
-                          >
-                            <Edit3 className="w-4 h-4 text-amber-800" />
-                            <span>Store & Account Settings</span>
-                          </button>
-
-                          <button
-                            id="dropdown-view-vault-btn"
-                            onClick={() => {
-                              setCurrentView('catalog');
-                              setIsUserMenuOpen(false);
-                            }}
-                            className="w-full text-left px-4 py-2 text-xs font-medium text-stone-700 hover:bg-stone-50 flex items-center gap-2"
-                          >
-                            <Layers className="w-4 h-4 text-stone-600" />
-                            <span>Browse Boutique</span>
-                          </button>
-                        </>
-                      ) : (
+                      <div className="py-1">
                         <button
-                          id="dropdown-buyer-account-settings-btn"
                           onClick={() => {
-                            setIsStoreProfileModalOpen(true);
                             setIsUserMenuOpen(false);
+                            setCurrentView('seller_dashboard');
                           }}
-                          className="w-full text-left px-4 py-2 text-xs font-medium text-amber-900 hover:bg-amber-50 flex items-center gap-2 cursor-pointer"
+                          className="w-full text-left px-4 py-2 hover:bg-stone-50 flex items-center gap-2.5 text-stone-700 font-medium"
                         >
-                          <UserIcon className="w-4 h-4 text-amber-800" />
+                          <Store className="w-4 h-4 text-stone-500" />
+                          <span>Seller Dashboard</span>
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            setIsUserMenuOpen(false);
+                            setIsStoreProfileModalOpen(true);
+                          }}
+                          className="w-full text-left px-4 py-2 hover:bg-stone-50 flex items-center gap-2.5 text-stone-700 font-medium"
+                        >
+                          <Settings className="w-4 h-4 text-stone-500" />
                           <span>Account Settings</span>
                         </button>
-                      )}
+                      </div>
 
-                      <button
-                        id="dropdown-track-orders-btn"
-                        onClick={() => {
-                          openOrderTracking();
-                          setIsUserMenuOpen(false);
-                        }}
-                        className="w-full text-left px-4 py-2 text-xs font-medium text-stone-700 hover:bg-stone-50 flex items-center gap-2"
-                      >
-                        <Truck className="w-4 h-4 text-stone-600" />
-                        <span>Track Orders</span>
-                      </button>
+                      <div className="border-t border-stone-100 pt-1">
+                        <button
+                          onClick={() => {
+                            setIsUserMenuOpen(false);
+                            logout();
+                          }}
+                          className="w-full text-left px-4 py-2 hover:bg-red-50 text-red-700 flex items-center gap-2.5 font-medium transition-colors"
+                        >
+                          <LogOut className="w-4 h-4" />
+                          <span>Sign Out</span>
+                        </button>
+                      </div>
                     </div>
-
-                    <div className="pt-1 border-t border-stone-100">
-                      <button
-                        id="dropdown-logout-btn"
-                        onClick={() => {
-                          logout();
-                          setIsUserMenuOpen(false);
-                        }}
-                        className="w-full text-left px-4 py-2 text-xs font-medium text-rose-600 hover:bg-rose-50 flex items-center gap-2"
-                      >
-                        <LogOut className="w-4 h-4" />
-                        <span>Sign Out</span>
-                      </button>
-                    </div>
-                  </div>
                   </>
                 )}
               </div>
@@ -311,7 +237,6 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setCurrentView }) =
           </div>
         </div>
 
-        {/* Mobile Search Bar Expandable */}
         {isSearchOpen && (
           <div className="py-2.5 border-t border-stone-200 lg:hidden">
             <form onSubmit={handleSearchSubmit} className="relative">

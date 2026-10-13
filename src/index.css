@@ -22,7 +22,7 @@
   }
 }
 
-/* Disable native browser password reveal eye button (Edge/IE/Chrome) to prevent duplicate buttons */
+
 input::-ms-reveal,
 input::-ms-clear {
   display: none !important;
@@ -36,7 +36,7 @@ input::-webkit-credentials-auto-fill-button {
   pointer-events: none !important;
 }
 
-/* Custom smooth scrollbar */
+
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;

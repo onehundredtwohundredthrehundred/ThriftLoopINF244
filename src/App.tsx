@@ -10,70 +10,45 @@ import { CartDrawer } from './components/CartDrawer';
 import { CheckoutModal } from './components/CheckoutModal';
 import { OrderTrackerModal } from './components/OrderTrackerModal';
 import { SellerDashboard } from './components/SellerDashboard';
-import { PrintableReportModal } from './components/PrintableReportModal';
 import { SellerProfileModal } from './components/SellerProfileModal';
 import { AccountSettingsModal } from './components/AccountSettingsModal';
-import { ShippoDiagnosticsModal } from './components/ShippoDiagnosticsModal';
 import { Footer } from './components/Footer';
-
 function MainAppContent() {
-  const { currentUser } = useAuth();
-  const { isShippoDiagnosticsOpen, setIsShippoDiagnosticsOpen } = useCart();
-  const [currentView, setCurrentView] = useState<'catalog' | 'seller_dashboard'>(() => {
-    return currentUser && currentUser.role === 'seller' ? 'seller_dashboard' : 'catalog';
-  });
+    const { currentUser } = useAuth();
+    const [currentView, setCurrentView] = useState<'catalog' | 'seller_dashboard'> (() => {
+        return currentUser && currentUser.role === 'seller' ? 'seller_dashboard' : 'catalog';
+    });
+    useEffect(() => {
+        if ((!currentUser || currentUser.role !== 'seller') && currentView === 'seller_dashboard') {
+            setCurrentView('catalog');
+        }
+    }, [currentUser, currentView]);
+    return (<div className="min-h-screen flex flex-col bg-[#FDFBF7] text-stone-900 font-sans">
+      <Navbar currentView={currentView} setCurrentView={setCurrentView}/>
 
-  // Automatically adjust view if non-seller is in seller dashboard
-  useEffect(() => {
-    if ((!currentUser || currentUser.role !== 'seller') && currentView === 'seller_dashboard') {
-      setCurrentView('catalog');
-    }
-  }, [currentUser, currentView]);
-
-  return (
-    <div className="min-h-screen flex flex-col bg-[#FDFBF7] text-stone-900 font-sans">
-      {/* Navigation Header */}
-      <Navbar currentView={currentView} setCurrentView={setCurrentView} />
-
-      {/* Main View Display */}
       <main className="flex-1">
-        {currentView === 'catalog' && (
-          <ProductCatalog />
-        )}
+        {currentView === 'catalog' && (<ProductCatalog />)}
 
-        {currentView === 'seller_dashboard' && (
-          <SellerDashboard />
-        )}
+        {currentView === 'seller_dashboard' && (<SellerDashboard />)}
       </main>
 
-      {/* Shared Modals & Drawers */}
       <ProductDetailModal />
       <CartDrawer />
       <CheckoutModal />
       <OrderTrackerModal />
-      <PrintableReportModal />
-      <SellerProfileModal setCurrentView={setCurrentView} />
+      <SellerProfileModal setCurrentView={setCurrentView}/>
       <AccountSettingsModal />
-      <ShippoDiagnosticsModal 
-        isOpen={isShippoDiagnosticsOpen} 
-        onClose={() => setIsShippoDiagnosticsOpen(false)} 
-      />
       <AuthModal />
 
-      {/* Footer */}
-      <Footer setCurrentView={setCurrentView} />
-    </div>
-  );
+      <Footer setCurrentView={setCurrentView}/>
+    </div>);
 }
-
 export default function App() {
-  return (
-    <AuthProvider>
+    return (<AuthProvider>
       <InventoryProvider>
         <CartProvider>
           <MainAppContent />
         </CartProvider>
       </InventoryProvider>
-    </AuthProvider>
-  );
+    </AuthProvider>);
 }
