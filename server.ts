@@ -12,6 +12,7 @@ const PORT = Number(process.env.PORT) || 3000;
 app.use(express.json());
 
 app.use("/api/lalamove", lalamoveRouter);
+app.use("/api/shipping/lalamove", lalamoveRouter);
 app.use("/api/stripe", stripeRouter);
 
 app.get("/api/health", (_req, res) => {

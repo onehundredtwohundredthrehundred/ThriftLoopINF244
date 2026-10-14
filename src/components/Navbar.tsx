@@ -191,6 +191,17 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setCurrentView }) =
                         <button
                           onClick={() => {
                             setIsUserMenuOpen(false);
+                            openOrderTracking();
+                          }}
+                          className="w-full text-left px-4 py-2 hover:bg-stone-50 flex items-center gap-2.5 text-stone-700 font-medium"
+                        >
+                          <Truck className="w-4 h-4 text-stone-500" />
+                          <span>Order Tracking</span>
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            setIsUserMenuOpen(false);
                             setIsStoreProfileModalOpen(true);
                           }}
                           className="w-full text-left px-4 py-2 hover:bg-stone-50 flex items-center gap-2.5 text-stone-700 font-medium"

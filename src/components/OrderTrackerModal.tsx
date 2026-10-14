@@ -244,6 +244,25 @@ export const OrderTrackerModal: React.FC = () => {
                       </span>
                     </div>)}
 
+                  {['CANCELED', 'REJECTED', 'EXPIRED'].includes(String(activeTrackingOrder.courier?.lalamoveStatus || '').toUpperCase()) && (<div className="absolute top-2.5 left-2.5 right-2.5 z-20 bg-amber-950/95 text-amber-100 p-2.5 sm:p-3 rounded-xl border border-amber-500/60 shadow-md flex items-center justify-between gap-2 animate-in fade-in slide-in-from-top-2 duration-300">
+                      <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
+                        <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-amber-500/20 border border-amber-400 flex items-center justify-center shrink-0">
+                          <AlertCircle className="w-4 h-4 text-amber-300 stroke-[2.5]"/>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-bold text-xs sm:text-sm text-white truncate">
+                            Driver Declined / Order Cancelled
+                          </p>
+                          <p className="text-[10px] sm:text-[11px] text-amber-200/90 truncate">
+                            The driver rejected or cancelled the request. Click "Sync Status" to re-match a courier.
+                          </p>
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/30 text-amber-200 border border-amber-400/40 shrink-0">
+                        Rejected
+                      </span>
+                    </div>)}
+
                   {activeTrackingOrder.courier?.lalamoveShareLink ? (<div className="relative w-full h-full bg-stone-100">
                       <iframe src={activeTrackingOrder.courier.lalamoveShareLink} title="Lalamove Live Driver Map" className="w-full h-full border-0" loading="lazy" allow="geolocation"/>
                     </div>) : (activeTrackingOrder.orderStatus === 'delivered' || activeTrackingOrder.courier?.trackingStatus === 'DELIVERED' || activeTrackingOrder.courier?.lalamoveStatus === 'COMPLETED') ? (<div className="p-6 sm:p-8 flex flex-col items-center justify-center text-center h-full bg-stone-900 text-stone-200 space-y-3">

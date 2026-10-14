@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { X, ShieldCheck, Lock, Truck, Loader2, AlertTriangle, XCircle, Minus, Plus, CreditCard, CheckCircle2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, Lock, Truck, Loader2, AlertTriangle, XCircle, Minus, Plus, CreditCard, CheckCircle2 } from 'lucide-react';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { useCart } from '../context/CartContext';
@@ -62,47 +62,12 @@ export const PH_LOCATION_DATA: Record<string, CityPostalMapping[]> = {
         { name: "San Jose del Monte City", zip: "3023" },
         { name: "Marilao", zip: "3019" },
         { name: "Bocaue", zip: "3018" }
-    ],
-    "Pampanga": [
-        { name: "Angeles City", zip: "2000" },
-        { name: "San Fernando City", zip: "2000" },
-        { name: "Mabalacat City", zip: "2010" },
-        { name: "Guagua", zip: "2003" }
-    ],
-    "Batangas": [
-        { name: "Batangas City", zip: "4200" },
-        { name: "Lipa City", zip: "4217" },
-        { name: "Tanauan City", zip: "4232" },
-        { name: "Nasugbu", zip: "4231" }
-    ],
-    "Cebu": [
-        { name: "Cebu City", zip: "6000" },
-        { name: "Mandaue City", zip: "6014" },
-        { name: "Lapu-Lapu City", zip: "6015" },
-        { name: "Talisay City", zip: "6045" }
-    ],
-    "Davao del Sur": [
-        { name: "Davao City", zip: "8000" },
-        { name: "Digos City", zip: "8002" }
-    ],
-    "Iloilo": [
-        { name: "Iloilo City", zip: "5000" },
-        { name: "Oton", zip: "5020" }
-    ],
-    "Benguet": [
-        { name: "Baguio City", zip: "2600" },
-        { name: "La Trinidad", zip: "2601" }
-    ],
-    "Pangasinan": [
-        { name: "Dagupan City", zip: "2400" },
-        { name: "San Carlos City", zip: "2420" },
-        { name: "Urdaneta City", zip: "2428" }
     ]
 };
 const CheckoutModalInner: React.FC = () => {
     const stripe = useStripe();
     const elements = useElements();
-    const { isCheckoutOpen, setIsCheckoutOpen, cart, subtotal, shippingFee, total, processCheckout, removeFromCart, updateQuantity, clearCart, setIsCartDrawerOpen } = useCart();
+    const { isCheckoutOpen, setIsCheckoutOpen, cart, subtotal, shippingFee, lalamoveFee, fetchLalamoveQuote, isFetchingQuote, total, processCheckout, removeFromCart, updateQuantity, clearCart, setIsCartDrawerOpen } = useCart();
     const { currentUser } = useAuth();
     const [fullName, setFullName] = useState('');
     const [phone, setPhone] = useState('');
@@ -116,7 +81,23 @@ const CheckoutModalInner: React.FC = () => {
     const [errorMessage, setErrorMessage] = useState('');
     const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
     const [cancelQuantities, setCancelQuantities] = useState<Record<string, number>>({});
+    const [removedAreas, setRemovedAreas] = useState<string[]>([]);
     useBodyScrollLock(isCheckoutOpen);
+    useEffect(() => {
+        if (isCheckoutOpen && (city || province)) {
+            fetchLalamoveQuote({ city, province, street }).then(res => {
+                if (res && res.isOutOfService) {
+                    const outArea = city || province;
+                    if (outArea && !removedAreas.includes(outArea)) {
+                        setRemovedAreas(prev => [...prev, outArea]);
+                    }
+                    setErrorMessage(`Note: "${outArea}" is out of Lalamove service area and has been removed from options.`);
+                    if (city) setCity('');
+                    else if (province) setProvince('');
+                }
+            });
+        }
+    }, [isCheckoutOpen, city, province, street]);
     const handleProvinceChange = (newProvince: string) => {
         setProvince(newProvince);
         if (!newProvince) {
@@ -329,7 +310,6 @@ const CheckoutModalInner: React.FC = () => {
 
           <div className="bg-stone-900 px-6 py-4 text-amber-50 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0"/>
               <h2 className="font-sans text-base sm:text-lg font-bold text-white tracking-tight">Confirm Payment & Details</h2>
             </div>
             {!isProcessing && (<button type="button" onClick={() => setIsCheckoutOpen(false)} className="text-stone-400 hover:text-white p-1 rounded-lg hover:bg-stone-800 transition-colors cursor-pointer" title="Close">
@@ -372,7 +352,7 @@ const CheckoutModalInner: React.FC = () => {
                         </label>
                         <select required value={province} onChange={(e) => handleProvinceChange(e.target.value)} className="w-full px-3 py-2 bg-white border border-stone-300 rounded-lg text-stone-900 focus:ring-1 focus:ring-amber-800 focus:outline-none font-sans">
                           <option value="">Select Province / Region</option>
-                          {Object.keys(PH_LOCATION_DATA).map((provKey) => (<option key={provKey} value={provKey}>
+                          {Object.keys(PH_LOCATION_DATA).filter(provKey => !removedAreas.includes(provKey)).map((provKey) => (<option key={provKey} value={provKey}>
                               {provKey}
                             </option>))}
                         </select>
@@ -394,7 +374,7 @@ const CheckoutModalInner: React.FC = () => {
                         <select required disabled={!province} value={city} onChange={(e) => handleCityChange(e.target.value)} className="w-full px-3 py-2 bg-white border border-stone-300 rounded-lg text-stone-900 focus:ring-1 focus:ring-amber-800 focus:outline-none font-sans disabled:bg-stone-100 disabled:text-stone-400">
                           {!province ? (<option value="">Select Province first</option>) : (<>
                               <option value="">Select City / Municipality</option>
-                              {currentCitiesList.map((cityObj) => (<option key={cityObj.name} value={cityObj.name}>
+                              {currentCitiesList.filter(c => !removedAreas.includes(c.name)).map((cityObj) => (<option key={cityObj.name} value={cityObj.name}>
                                   {cityObj.name}
                                 </option>))}
                             </>)}
@@ -423,10 +403,15 @@ const CheckoutModalInner: React.FC = () => {
                   <div>
                     <div className="p-3 rounded-xl border border-orange-600 bg-orange-50/90 shadow-xs ring-1 ring-orange-600">
                       <div className="flex items-center justify-between">
-                        <span className="font-bold text-xs text-stone-900">
-                          Lalamove Express
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-xs text-stone-900">
+                            Lalamove Express Delivery
+                          </span>
+                          {isFetchingQuote && <Loader2 className="w-3 h-3 text-orange-600 animate-spin" />}
+                        </div>
+                        <span className="text-[11px] font-bold text-orange-950">
+                          {shippingFee === 0 ? 'FREE (PROMO)' : `₱${lalamoveFee} (Live Lalamove Fee)`}
                         </span>
-                        <span className="text-[11px] font-bold text-orange-900">₱190 (Express)</span>
                       </div>
                     </div>
                   </div>

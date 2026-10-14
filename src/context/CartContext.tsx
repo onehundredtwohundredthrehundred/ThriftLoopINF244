@@ -38,6 +38,9 @@ interface CartContextType {
     refreshOrderTracking: (orderId: string) => Promise<void>;
     simulateTrackingStage: (orderId: string, stage: 'PRE_TRANSIT' | 'TRANSIT' | 'OUT_FOR_DELIVERY' | 'DELIVERED') => Promise<void>;
     isTrackingRefreshing: boolean;
+    lalamoveFee: number;
+    fetchLalamoveQuote: (destination: { city?: string; province?: string; street?: string }) => Promise<{ fee: number; isOutOfService?: boolean }>;
+    isFetchingQuote: boolean;
     processCheckout: (checkoutData: {
         fullName: string;
         phone: string;
@@ -268,42 +271,47 @@ export const CartProvider: React.FC<{
         setIsTrackingRefreshing(true);
         try {
             if (targetOrder.courier?.isLalamove && targetOrder.courier.lalamoveOrderId) {
-                const res = await fetch(`/api/shipping/lalamove/order/${encodeURIComponent(targetOrder.courier.lalamoveOrderId)}`);
-                if (res.ok) {
-                    const data = await res.json();
-                    if (data.success) {
-                        const normStatus = String(data.status || '').toUpperCase();
-                        const isDelivered = normStatus === 'COMPLETED' || normStatus === 'DELIVERED';
-                        const isPickedUp = normStatus === 'PICKED_UP';
-                        const isOngoing = normStatus === 'ON_GOING';
-                        const updatedCourier: CourierInfo = {
-                            ...targetOrder.courier,
-                            lalamoveStatus: data.status,
-                            driverId: data.driverId || targetOrder.courier.driverId,
-                            driver: data.driver !== undefined ? data.driver : targetOrder.courier.driver,
-                            driverLocation: data.driverLocation !== undefined ? data.driverLocation : targetOrder.courier.driverLocation,
-                            lalamoveShareLink: data.shareLink || targetOrder.courier.lalamoveShareLink,
-                            trackingStatus: isDelivered ? 'DELIVERED' : isPickedUp ? 'OUT_FOR_DELIVERY' : isOngoing ? 'TRANSIT' : 'PRE_TRANSIT',
-                            estimatedDelivery: isDelivered ? 'Delivered' : isPickedUp ? 'Arriving Today' : 'Scheduled Delivery',
-                            currentHub: isDelivered ? 'Delivered to Recipient' : isPickedUp ? 'Out for Delivery (Rider in Transit)' : isOngoing ? 'Courier Heading to Pickup Vault' : 'ThriftLoop Vault, Makati',
-                            timeline: data.timeline || targetOrder.courier.timeline,
-                            lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-                        };
-                        const updatedOrder: Order = {
-                            ...targetOrder,
-                            courier: updatedCourier,
-                            orderStatus: isDelivered ? 'delivered' : isPickedUp ? 'out_for_delivery' : isOngoing ? 'in_transit' : 'order_placed'
-                        };
-                        setOrders(prev => prev.map(o => o.id === orderId ? updatedOrder : o));
-                        if (activeTrackingOrder?.id === orderId)
-                            setActiveTrackingOrder(updatedOrder);
-                        try {
-                            await setDoc(doc(db, 'orders', orderId), sanitizeFirestoreData(updatedOrder), { merge: true });
+                try {
+                    const res = await fetch(`/api/shipping/lalamove/order/${encodeURIComponent(targetOrder.courier.lalamoveOrderId)}`);
+                    const contentType = res.headers.get('content-type') || '';
+                    if (res.ok && contentType.includes('application/json')) {
+                        const data = await res.json();
+                        if (data && data.success) {
+                            const normStatus = String(data.status || '').toUpperCase();
+                            const isDelivered = normStatus === 'COMPLETED' || normStatus === 'DELIVERED';
+                            const isPickedUp = normStatus === 'PICKED_UP';
+                            const isOngoing = normStatus === 'ON_GOING';
+                            const updatedCourier: CourierInfo = {
+                                ...targetOrder.courier,
+                                lalamoveStatus: data.status,
+                                driverId: data.driverId || targetOrder.courier.driverId,
+                                driver: data.driver !== undefined ? data.driver : targetOrder.courier.driver,
+                                driverLocation: data.driverLocation !== undefined ? data.driverLocation : targetOrder.courier.driverLocation,
+                                lalamoveShareLink: data.shareLink || targetOrder.courier.lalamoveShareLink,
+                                trackingStatus: isDelivered ? 'DELIVERED' : isPickedUp ? 'OUT_FOR_DELIVERY' : isOngoing ? 'TRANSIT' : 'PRE_TRANSIT',
+                                estimatedDelivery: isDelivered ? 'Delivered' : isPickedUp ? 'Arriving Today' : 'Scheduled Delivery',
+                                currentHub: isDelivered ? 'Delivered to Recipient' : isPickedUp ? 'Out for Delivery (Rider in Transit)' : isOngoing ? 'Courier Heading to Pickup Vault' : 'ThriftLoop Vault, Makati',
+                                timeline: data.timeline || targetOrder.courier.timeline,
+                                lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                            };
+                            const updatedOrder: Order = {
+                                ...targetOrder,
+                                courier: updatedCourier,
+                                orderStatus: isDelivered ? 'delivered' : isPickedUp ? 'out_for_delivery' : isOngoing ? 'in_transit' : 'order_placed'
+                            };
+                            setOrders(prev => prev.map(o => o.id === orderId ? updatedOrder : o));
+                            if (activeTrackingOrder?.id === orderId)
+                                setActiveTrackingOrder(updatedOrder);
+                            try {
+                                await setDoc(doc(db, 'orders', orderId), sanitizeFirestoreData(updatedOrder), { merge: true });
+                            }
+                            catch (e) {
+                            }
+                            return;
                         }
-                        catch (e) {
-                        }
-                        return;
                     }
+                } catch (e) {
+                    console.warn('Lalamove tracking API returned non-JSON response or fetch failed, using stored tracking data:', e);
                 }
             }
             const updatedCourier: CourierInfo = {
@@ -503,6 +511,40 @@ export const CartProvider: React.FC<{
             syncCartToFirestore(currentUserId, []);
         }
     };
+    const [lalamoveFee, setLalamoveFee] = useState<number>(41);
+    const [isFetchingQuote, setIsFetchingQuote] = useState<boolean>(false);
+
+    const fetchLalamoveQuote = async (destination: { city?: string; province?: string; street?: string }): Promise<{ fee: number; isOutOfService?: boolean }> => {
+        try {
+            setIsFetchingQuote(true);
+            const res = await fetch('/api/shipping/lalamove/quote', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    city: destination.city,
+                    province: destination.province,
+                    street: destination.street,
+                    itemCount: cart.reduce((sum, item) => sum + (item.quantity || 1), 0)
+                })
+            });
+            if (res.ok) {
+                const data = await res.json();
+                if (data.isOutOfService) {
+                    return { fee: 0, isOutOfService: true };
+                }
+                if (data.success && typeof data.fee === 'number') {
+                    setLalamoveFee(data.fee);
+                    return { fee: data.fee, isOutOfService: false };
+                }
+            }
+        } catch (e) {
+            console.warn('Quote fetch error:', e);
+        } finally {
+            setIsFetchingQuote(false);
+        }
+        return { fee: lalamoveFee, isOutOfService: false };
+    };
+
     const applyDiscountCode = (): {
         success: boolean;
         message: string;
@@ -514,15 +556,15 @@ export const CartProvider: React.FC<{
             return { success: true, message: '10% discount applied!' };
         }
         else if (clean === 'FREESHIP' || clean === 'FREESHIPPING') {
-            setDiscount(150);
-            return { success: true, message: 'Free Courier Delivery applied!' };
+            setDiscount(lalamoveFee);
+            return { success: true, message: 'Free Lalamove Courier Delivery applied!' };
         }
         else {
             return { success: false, message: 'Invalid promo code.' };
         }
     };
     const subtotal = cart.reduce((sum, item) => sum + item.product.price * (item.quantity || 1), 0);
-    const shippingFee = cart.length > 0 ? (subtotal >= 5000 ? 0 : 150) : 0;
+    const shippingFee = cart.length > 0 ? (subtotal >= 5000 ? 0 : lalamoveFee) : 0;
     const total = Math.max(0, subtotal + shippingFee - discount);
     const openOrderTracking = (orderId?: string) => {
         if (orderId) {
@@ -772,6 +814,9 @@ export const CartProvider: React.FC<{
             refreshOrderTracking,
             simulateTrackingStage,
             isTrackingRefreshing,
+            lalamoveFee,
+            fetchLalamoveQuote,
+            isFetchingQuote,
             processCheckout,
         }}>
       {children}
